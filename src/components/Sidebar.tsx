@@ -10,6 +10,7 @@ import {
   HeartHandshake, 
   Palette, 
   Terminal,
+  Package,
   X,
   ChevronRight,
   ExternalLink
@@ -34,6 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
     { id: 'funnel', label: 'Funil de Vendas', icon: TrendingUp },
     { id: 'kanban', label: 'Kanban de Leads', icon: Columns3 },
     { id: 'chats', label: 'WhatsApp & Chats', icon: MessageSquare, badge: unreadMessagesCount, badgeColor: 'bg-brand-500' },
+    { id: 'products', label: 'Produtos & Estoque', icon: Package },
     { id: 'ai_config', label: 'Linguagem da IA', icon: Bot },
     { id: 'follow_up', label: 'Campanhas Follow-up', icon: Send },
     { id: 'post_sale', label: 'Pós-Venda & Retenção', icon: HeartHandshake },

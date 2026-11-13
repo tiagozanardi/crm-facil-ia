@@ -9,6 +9,7 @@ import { DashboardView } from './views/DashboardView';
 import { SalesFunnelView } from './views/SalesFunnelView';
 import { KanbanView } from './views/KanbanView';
 import { ChatView } from './views/ChatView';
+import { ProductsView } from './views/ProductsView';
 import { AILanguageView } from './views/AILanguageView';
 import { FollowUpView } from './views/FollowUpView';
 import { PostSaleView } from './views/PostSaleView';
@@ -29,6 +30,8 @@ const MainContent: React.FC = () => {
         return <KanbanView />;
       case 'chats':
         return <ChatView />;
+      case 'products':
+        return <ProductsView />;
       case 'ai_config':
         return <AILanguageView />;
       case 'follow_up':

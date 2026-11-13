@@ -1,4 +1,97 @@
-import { Lead, ChatConversation, QuickReply, AIConfig, StoreSettings, FollowUpCampaign, DevLogItem, AIKnowledgeItem } from '../types';
+import { Lead, ChatConversation, QuickReply, AIConfig, StoreSettings, FollowUpCampaign, DevLogItem, AIKnowledgeItem, Product } from '../types';
+
+export const initialProducts: Product[] = [
+  {
+    id: 'prod-1',
+    name: 'Kit Mala de Bordo + Frasqueira Rígida',
+    category: 'bordo',
+    price: 689.00,
+    pixPrice: 640.00,
+    stock: 7,
+    minStock: 3,
+    dimensions: '55 x 35 x 25 cm (Padrão ANAC)',
+    colors: ['Terracota', 'Rosé Gold', 'Preto Fosco'],
+    imageUrl: 'https://images.unsplash.com/photo-1565026057447-bc90a3dceb87?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'KIT-BORDO-TERRA',
+    description: 'Conjunto em polipropileno ultrarresistente com cadeado TSA embutido e rodinhas duplas 360° silenciosas.'
+  },
+  {
+    id: 'prod-2',
+    name: 'Mala de Bordo 10kg Explorer ANAC',
+    category: 'bordo',
+    price: 449.00,
+    pixPrice: 417.00,
+    stock: 14,
+    minStock: 4,
+    dimensions: '55 x 35 x 25 cm (Com rodinhas)',
+    colors: ['Terracota', 'Grafite', 'Azul Marinho', 'Rose Gold'],
+    imageUrl: 'https://images.unsplash.com/photo-1581553680321-4fffae59fccd?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'MALA-BORDO-10KG',
+    description: 'Homologada para embarque direto na cabine da Azul, Gol e Latam sem despacho.'
+  },
+  {
+    id: 'prod-3',
+    name: 'Mala Grande 28kg Viagem Internacional',
+    category: 'media_grande',
+    price: 840.00,
+    pixPrice: 781.00,
+    stock: 5,
+    minStock: 2,
+    dimensions: '76 x 50 x 31 cm (Expansível)',
+    colors: ['Preto Fosco', 'Grafite Ônix', 'Vinho'],
+    imageUrl: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'MALA-G-28KG',
+    description: 'Ideal para viagens internacionais longas. Zíper antifurto duplo e divisórias internas com tela.'
+  },
+  {
+    id: 'prod-4',
+    name: 'Frasqueira Térmica & Rígida de Viagem',
+    category: 'frasqueira',
+    price: 219.00,
+    pixPrice: 203.00,
+    stock: 9,
+    minStock: 3,
+    dimensions: '32 x 26 x 15 cm',
+    colors: ['Terracota', 'Rosé Gold', 'Preto'],
+    imageUrl: 'https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'FRASQ-RIGIDA-01',
+    description: 'Frasqueira com alça carona para fixar no puxador da mala de bordo e espelho interno.'
+  },
+  {
+    id: 'prod-5',
+    name: 'Mochila Executiva Antifurto USB & Notebook',
+    category: 'mochila',
+    price: 320.00,
+    pixPrice: 297.00,
+    stock: 2, // Alerta estoque baixo
+    minStock: 3,
+    dimensions: '44 x 30 x 18 cm (Notebook até 15.6")',
+    colors: ['Preto Carbono', 'Cinza Chumbo'],
+    imageUrl: 'https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'MOCH-EXEC-USB',
+    description: 'Tecido impermeável Oxford, porta USB externa e bolso secreto nas costas.'
+  },
+  {
+    id: 'prod-6',
+    name: 'Kit Organizadores de Bagagem 6 Peças',
+    category: 'acessorios',
+    price: 129.00,
+    pixPrice: 119.00,
+    stock: 18,
+    minStock: 5,
+    dimensions: 'Tamanhos P, M e G + sacos para sapatos',
+    colors: ['Cinza Areia', 'Preto', 'Azul'],
+    imageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80',
+    active: true,
+    sku: 'ORG-BAG-6PC',
+    description: 'Comprime roupas e organiza sapatos, cabos e roupas íntimas de forma higiênica.'
+  }
+];
 
 export const initialStoreSettings: StoreSettings = {
   name: 'Malas SLZ',

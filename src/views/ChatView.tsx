@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useCRM } from '../context/CRMContext';
+import { Product } from '../types';
 import { 
   Search, 
   Send, 
@@ -16,7 +17,8 @@ import {
   ChevronLeft,
   X,
   ExternalLink,
-  Plus
+  Plus,
+  Package
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
@@ -30,12 +32,14 @@ export const ChatView: React.FC = () => {
     resumeAIForLead, 
     teachAIFromMessage, 
     quickReplies,
+    products,
     storeSettings
   } = useCRM();
 
   const [inputMessage, setInputMessage] = useState('');
   const [searchPhone, setSearchPhone] = useState('');
   const [showQuickRepliesModal, setShowQuickRepliesModal] = useState(false);
+  const [showProductsModal, setShowProductsModal] = useState(false);
   const [learningMessageId, setLearningMessageId] = useState<string | null>(null);
 
   // Filtro de conversas por telefone ou nome
@@ -58,6 +62,12 @@ export const ChatView: React.FC = () => {
   const handleApplyQuickReply = (text: string) => {
     setInputMessage(text);
     setShowQuickRepliesModal(false);
+  };
+
+  const handleInsertProduct = (p: Product) => {
+    const text = `✨ *${p.name}*\n📏 Medidas: ${p.dimensions || 'Padrão'}\n🎨 Cores disponíveis: ${p.colors.join(', ')}\n💰 Valor: R$ ${p.price.toFixed(2)}${p.pixPrice ? ` (ou R$ ${p.pixPrice.toFixed(2)} à vista no Pix com 7% OFF)` : ''}\n📦 Temos pronta entrega na nossa loja! Deseja que eu reserve para você?`;
+    setInputMessage(text);
+    setShowProductsModal(false);
   };
 
   const handleTeachAI = (msgText: string, msgId: string) => {
@@ -299,6 +309,15 @@ export const ChatView: React.FC = () => {
                 Respostas Rápidas
               </button>
 
+              <button
+                type="button"
+                onClick={() => setShowProductsModal(true)}
+                className="shrink-0 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1 transition-colors"
+              >
+                <Package className="w-3 h-3 text-emerald-600" />
+                Enviar Produto / Estoque
+              </button>
+
               {quickReplies.slice(0, 3).map((qr) => (
                 <button
                   key={qr.id}
@@ -378,6 +397,69 @@ export const ChatView: React.FC = () => {
                 className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-semibold hover:bg-gray-200"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE SELEÇÃO DE PRODUTO DO ESTOQUE */}
+      {showProductsModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-5 shadow-2xl border border-gray-200 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-sm font-bold text-gray-900">Selecionar Produto do Estoque para Enviar</h3>
+              </div>
+              <button 
+                onClick={() => setShowProductsModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 py-2">
+              Clique em um produto abaixo para montar a proposta formatada com foto, medidas e valor Pix direto no chat:
+            </p>
+
+            <div className="flex-1 overflow-y-auto py-2 space-y-2.5">
+              {products.map((p) => (
+                <div 
+                  key={p.id}
+                  onClick={() => handleInsertProduct(p)}
+                  className="p-3 rounded-xl border border-gray-200 hover:border-emerald-500 hover:bg-emerald-50/30 cursor-pointer transition-all flex items-center gap-3 group"
+                >
+                  <img 
+                    src={p.imageUrl} 
+                    alt={p.name} 
+                    className="w-14 h-14 rounded-lg object-cover border border-gray-200 shrink-0" 
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo-malas-slz.jpg'; }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-gray-900 truncate group-hover:text-emerald-700">{p.name}</h4>
+                      <span className="text-xs font-extrabold text-graphite-900">R$ {p.price.toFixed(2)}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-500 truncate mt-0.5">{p.dimensions || p.category}</div>
+                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                      <span className="text-emerald-700 font-bold">Pix: R$ {p.pixPrice?.toFixed(2)}</span>
+                      <span className={`px-1.5 py-0.2 rounded font-semibold ${p.stock > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                        {p.stock} un. em estoque
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowProductsModal(false)}
+                className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-semibold hover:bg-gray-200"
+              >
+                Cancelar
               </button>
             </div>
           </div>

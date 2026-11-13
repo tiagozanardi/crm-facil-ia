@@ -1,3 +1,26 @@
+export type ProductCategory = 
+  | 'bordo' 
+  | 'media_grande' 
+  | 'frasqueira' 
+  | 'mochila' 
+  | 'acessorios';
+
+export interface Product {
+  id: string;
+  name: string;
+  category: ProductCategory;
+  price: number;
+  pixPrice?: number;
+  stock: number;
+  minStock?: number;
+  dimensions?: string; // Ex: "55 x 35 x 25 cm (Padrão ANAC)"
+  colors: string[];
+  imageUrl: string;
+  active: boolean;
+  sku?: string;
+  description?: string;
+}
+
 export type LeadStage = 
   | 'novo'
   | 'atendimento_ia'

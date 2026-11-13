@@ -9,7 +9,8 @@ import {
   StoreSettings, 
   FollowUpCampaign, 
   DevLogItem, 
-  AIKnowledgeItem 
+  AIKnowledgeItem,
+  Product 
 } from '../types';
 import { 
   initialLeads, 
@@ -19,7 +20,8 @@ import {
   initialStoreSettings, 
   initialCampaigns, 
   initialDevLogs,
-  initialKnowledge 
+  initialKnowledge,
+  initialProducts 
 } from '../mock/initialData';
 
 export type ViewType = 
@@ -27,6 +29,7 @@ export type ViewType =
   | 'funnel' 
   | 'kanban' 
   | 'chats' 
+  | 'products'
   | 'ai_config' 
   | 'follow_up' 
   | 'post_sale' 
@@ -39,6 +42,11 @@ interface CRMContextType {
   leads: Lead[];
   updateLeadStage: (id: string, stage: LeadStage) => void;
   toggleLeadUrgency: (id: string) => void;
+  products: Product[];
+  addProduct: (product: Omit<Product, 'id'>) => void;
+  updateProduct: (id: string, product: Partial<Product>) => void;
+  deleteProduct: (id: string) => void;
+  updateProductStock: (id: string, delta: number) => void;
   conversations: Record<string, ChatConversation>;
   selectedChatLeadId: string | null;
   setSelectedChatLeadId: (id: string | null) => void;
@@ -234,6 +242,37 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification('Dados da loja e personalização salvos!');
   };
 
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+
+  const addProduct = (prod: Omit<Product, 'id'>) => {
+    const newProd: Product = {
+      ...prod,
+      id: `prod-${Date.now()}`
+    };
+    setProducts(prev => [newProd, ...prev]);
+    addNotification(`Produto "${newProd.name}" cadastrado com sucesso!`);
+  };
+
+  const updateProduct = (id: string, updated: Partial<Product>) => {
+    setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    addNotification('Produto atualizado!');
+  };
+
+  const deleteProduct = (id: string) => {
+    setProducts(prev => prev.filter(p => p.id !== id));
+    addNotification('Produto removido do catálogo.');
+  };
+
+  const updateProductStock = (id: string, delta: number) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id === id) {
+        const nextStock = Math.max(0, p.stock + delta);
+        return { ...p, stock: nextStock };
+      }
+      return p;
+    }));
+  };
+
   const toggleCampaign = (id: string) => {
     setCampaigns(prev => prev.map(c => c.id === id ? { ...c, active: !c.active } : c));
   };
@@ -245,6 +284,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       leads,
       updateLeadStage,
       toggleLeadUrgency,
+      products,
+      addProduct,
+      updateProduct,
+      deleteProduct,
+      updateProductStock,
       conversations,
       selectedChatLeadId,
       setSelectedChatLeadId,
