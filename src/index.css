@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Default: Malas SLZ Terracotta Architectural Palette */
+  --color-brand-50: #FFF6F2;
+  --color-brand-100: #FFE9DF;
+  --color-brand-200: #FFD2BF;
+  --color-brand-500: #B3471A;
+  --color-brand-600: #9A3810;
+  --color-brand-700: #7B2A08;
+  --color-accent: #D97706;
+}
+
+/* Glassmorphism & Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D3CDC5;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B6AEA4;
+}
+
+/* Smooth transitions */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(179, 71, 26, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(179, 71, 26, 0);
+  }
+}
+
+.pulse-attention {
+  animation: pulseGlow 2s infinite;
+}
