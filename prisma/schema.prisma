@@ -1,0 +1,344 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------
+// 1. TENANT / LOJA (MULTI-TENANT WHITE-LABEL)
+// ----------------------------------------------------
+model Store {
+  id                     String   @id @default(cuid())
+  name                   String   // Ex: "Malas SLZ"
+  slug                   String   @unique // Ex: "malas-slz"
+  segment                String?  @default("Malas de Viagem & Acessórios")
+  whatsappNumber         String   // Ex: "+55 98 98845-1290"
+  address                String?  // Ex: "Av. dos Holandeses, 100 - Calhau, São Luís - MA"
+  logoUrl                String?  @default("/logo-malas-slz.jpg")
+  
+  // Customização Visual / Identidade
+  primaryColor           String   @default("#B3471A") // Terracota nobre
+  accentColor            String   @default("#D97706") // Caramelo
+  surfaceColor           String   @default("#FAF8F5") // Areia arquitetônico
+
+  // Regras de Negócio
+  interventionPauseHours Int      @default(24) // Pausa de 24h na IA após humano responder
+  vipGroupLink           String?  // Link de redirecionamento para grupo VIP de WhatsApp
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  // Relações Multi-Tenant
+  users                  User[]
+  products               Product[]
+  leads                  Lead[]
+  conversations          Conversation[]
+  aiConfig               AIConfig?
+  aiKnowledge            AIKnowledge[]
+  quickReplies           QuickReply[]
+  campaigns              FollowUpCampaign[]
+  devLogs                DevLog[]
+
+  @@map("stores")
+}
+
+// ----------------------------------------------------
+// 2. USUÁRIOS & ATENDENTES (1 a 5 vendedores + dev admin)
+// ----------------------------------------------------
+enum Role {
+  ADMIN
+  SELLER
+  DEV
+}
+
+model User {
+  id           String    @id @default(cuid())
+  storeId      String
+  name         String
+  email        String    @unique
+  passwordHash String?
+  role         Role      @default(SELLER)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  assignedLeads Lead[]
+
+  @@map("users")
+}
+
+// ----------------------------------------------------
+// 3. CATÁLOGO DE PRODUTOS & ESTOQUE
+// ----------------------------------------------------
+enum ProductCategory {
+  BORDO
+  MEDIA_GRANDE
+  FRASQUEIRA
+  MOCHILA
+  ACESSORIOS
+}
+
+model Product {
+  id          String          @id @default(cuid())
+  storeId     String
+  name        String          // Ex: "Kit Mala de Bordo + Frasqueira Rígida"
+  sku         String?         // Ex: "KIT-BORDO-TERRA"
+  category    ProductCategory @default(BORDO)
+  price       Decimal         @db.Decimal(10, 2) // Preço normal
+  pixPrice    Decimal?        @db.Decimal(10, 2) // Preço com desconto Pix
+  stock       Int             @default(0) // Quantidade física disponível
+  minStock    Int             @default(3) // Alerta de reposição
+  dimensions  String?         // Ex: "55 x 35 x 25 cm (Padrão ANAC)"
+  colors      String[]        @default([]) // Ex: ["Terracota", "Preto", "Rosé Gold"]
+  imageUrl    String          // Foto do produto
+  description String?
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  store       Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
+
+// ----------------------------------------------------
+// 4. PIPELINE DE LEADS & FUNIL DE VENDAS
+// ----------------------------------------------------
+enum LeadStage {
+  NOVO
+  ATENDIMENTO_IA
+  INTERVENCAO_HUMANA
+  EM_NEGOCIACAO
+  FECHADO
+  PERDIDO
+}
+
+enum AIStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+model Lead {
+  id              String         @id @default(cuid())
+  storeId         String
+  name            String         // Ex: "Dra. Camila Vasconcelos"
+  phone           String         // Ex: "(98) 99123-4455"
+  interest        String?        // Ex: "Mala de Bordo 10kg Rose Gold"
+  estimatedValue  Decimal        @default(0) @db.Decimal(10, 2)
+  stage           LeadStage      @default(NOVO)
+  aiStatus        AIStatus       @default(ACTIVE)
+  pausedUntil     DateTime?      // Data/hora até quando a IA fica em silêncio
+  lastInteraction DateTime       @default(now())
+  urgent          Boolean        @default(false)
+  urgentReason    String?        // Ex: "Pediu desconto no Pix para retirar hoje"
+  unreadCount     Int            @default(0)
+  tags            String[]       @default([])
+  assignedToId    String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  assignedTo      User?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  conversation    Conversation?
+
+  @@map("leads")
+}
+
+// ----------------------------------------------------
+// 5. ATENDIMENTO WHATSAPP: CONVERSAS & MENSAGENS
+// ----------------------------------------------------
+enum MessageSender {
+  CLIENT
+  AI
+  AGENT
+}
+
+model Conversation {
+  id            String         @id @default(cuid())
+  storeId       String
+  leadId        String         @unique
+  phone         String
+  leadName      String
+  stage         LeadStage      @default(NOVO)
+  aiStatus      AIStatus       @default(ACTIVE)
+  pausedUntil   DateTime?
+  lastMessage   String?
+  lastMessageAt DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  store         Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lead          Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String         @id @default(cuid())
+  conversationId String
+  sender         MessageSender
+  text           String         @db.Text
+  mediaUrl       String?
+  delivered      Boolean        @default(true)
+  read           Boolean        @default(false)
+  isLearned      Boolean        @default(false) // Se o humano ensinou a IA com ela
+  createdAt      DateTime       @default(now())
+
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// ----------------------------------------------------
+// 6. LINGUAGEM DA IA (ZERO PROMPTS PARA O LOJISTA)
+// ----------------------------------------------------
+enum AITone {
+  CONSULTIVO
+  VENDEDOR
+  DIRETO
+  AFETUOSO
+}
+
+enum EmojiIntensity {
+  NONE
+  MODERATE
+  EXPRESSIVE
+}
+
+enum SlangType {
+  NEUTRO
+  REGIONAL_SLZ
+  DESCONTRAIDO
+  FORMAL
+}
+
+enum CTAStrategy {
+  LINK_PAGAMENTO
+  DIRECIONAR_LOJA_FISICA
+  GRUPO_VIP_WHATSAPP
+  CONSULTOR_HUMANO
+}
+
+model AIConfig {
+  id               String         @id @default(cuid())
+  storeId          String         @unique
+  tone             AITone         @default(CONSULTIVO)
+  emojiIntensity   EmojiIntensity @default(MODERATE)
+  slangType        SlangType      @default(DESCONTRAIDO)
+  ctaStrategy      CTAStrategy    @default(GRUPO_VIP_WHATSAPP)
+  maxWordsPerReply Int            @default(55)
+  activeHoursStart String         @default("08:00")
+  activeHoursEnd   String         @default("22:00")
+  respondOffHours  Boolean        @default(true)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  store            Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("ai_configs")
+}
+
+// ----------------------------------------------------
+// 7. BASE DE CONHECIMENTO APRENDIDA (RAG CHUNKS)
+// ----------------------------------------------------
+enum KnowledgeSource {
+  HUMANO_CHAT
+  MANUAL
+}
+
+model AIKnowledge {
+  id        String          @id @default(cuid())
+  storeId   String
+  question  String          @db.Text
+  answer    String          @db.Text
+  source    KnowledgeSource @default(HUMANO_CHAT)
+  createdAt DateTime        @default(now())
+
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("ai_knowledge")
+}
+
+// ----------------------------------------------------
+// 8. RESPOSTAS RÁPIDAS
+// ----------------------------------------------------
+model QuickReply {
+  id        String   @id @default(cuid())
+  storeId   String
+  title     String   // Ex: "Medidas Padrão ANAC"
+  shortcut  String   // Ex: "/bordo"
+  category  String   @default("geral")
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("quick_replies")
+}
+
+// ----------------------------------------------------
+// 9. CAMPANHAS DE FOLLOW-UP
+// ----------------------------------------------------
+model FollowUpCampaign {
+  id               String    @id @default(cuid())
+  storeId          String
+  title            String
+  triggerHours     Int       @default(24) // Gatilho de 24h sem resposta
+  targetStage      LeadStage @default(ATENDIMENTO_IA)
+  messageTemplate  String    @db.Text
+  active           Boolean   @default(true)
+  conversionsCount Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("follow_up_campaigns")
+}
+
+// ----------------------------------------------------
+// 10. LOGS TÉCNICOS DEV & CONSUMO DE TOKENS POR LOJA
+// ----------------------------------------------------
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  AI_CALL
+}
+
+enum ServiceName {
+  EVOLUTION_API
+  OPENAI
+  GEMINI
+  CRM_WEBHOOK
+  TOKEN_BILLING
+}
+
+model DevLog {
+  id        String      @id @default(cuid())
+  storeId   String
+  level     LogLevel    @default(INFO)
+  service   ServiceName @default(CRM_WEBHOOK)
+  message   String      @db.Text
+  tokensIn  Int?        @default(0)
+  tokensOut Int?        @default(0)
+  latencyMs Int?        @default(0)
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  store     Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("dev_logs")
+}
