@@ -55,6 +55,11 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - `prisma/seed-leads.ts` (`npm run seed:leads`): seed idempotente com os leads de demonstração (Camila, Rodrigo, Beatriz, Marcelo e Juliana) — banco agora tem 5 leads e 15 mensagens.
   - Frontend hidrata leads e conversas do banco com fallback resiliente para os mocks.
   - **Validado com a chave real da OpenAI**: `POST /api/ai/generate` → 200 (gpt-4o-mini, 3746ms, 1403 tokens) e `POST /api/conversations/:leadId/ai-reply` → 201 (2328ms, 1392 tokens, mensagem gravada como `AI`), ambos com `DevLog` no PostgreSQL. Respostas citaram produto/preço Pix/estoque corretos.
+- [x] **Fase 7 - Persistência da Configuração da IA e do Conhecimento**:
+  - `server/routes/aiConfig.ts` (`GET/PUT /api/ai-config`) e `server/routes/knowledge.ts` (`GET/POST/DELETE /api/knowledge`).
+  - Tom, emojis, gírias, CTA, limite de palavras e horários agora são salvos no PostgreSQL; o prompt lê do banco em toda geração (validado: mudar para "vendedor/expressivo" alterou a resposta real).
+  - "Ensinar IA com esta resposta" grava em `AIKnowledge` com `source = HUMANO_CHAT`; a lista na tela "Linguagem da IA" vem do banco e permite excluir ensinamentos.
+  - Atualização otimista com aviso quando o banco não aceita (backend offline).
 
 ---
 
@@ -93,6 +98,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/04-camada-api-backend-express-hibrido.md`](./docs/features/04-camada-api-backend-express-hibrido.md) (Backend Express híbrido com CRUD de Produtos e Store, fallback resiliente e adaptador Vercel Serverless).
 - [`docs/features/05-integracao-openai-playground.md`](./docs/features/05-integracao-openai-playground.md) (Integração OpenAI GPT-4o-mini com system prompt dinâmico, multi-turno e DevLog automático no Playground da IA).
 - [`docs/features/06-ia-no-chat-e-rotas-leads-conversas.md`](./docs/features/06-ia-no-chat-e-rotas-leads-conversas.md) (IA no Chat com histórico real, persistência de leads/conversas, pausa de intervenção humana e seed idempotente de leads).
+- [`docs/features/07-persistencia-aiconfig-e-conhecimento.md`](./docs/features/07-persistencia-aiconfig-e-conhecimento.md) (Configuração da linguagem da IA e base de conhecimento/RAG persistidas no PostgreSQL, com validação e exclusão de ensinamentos).
 
 ---
 
@@ -106,4 +112,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 4. **Fase 6 implementada** (commit `87566e0`): serviço de IA centralizado, rotas de leads e conversas, pausa/retomada de IA no backend, botão "Responder com IA" no chat com modo sugestão, hidratação real do frontend e seed idempotente (`npm run seed:leads`).
 5. **Banco populado**: 5 leads, 5 conversas, 15 mensagens (Supabase), mantendo os DevLogs reais.
 6. **Validação com a chave real da OpenAI** (`.env` local, não versionado): Playground 200 / 1403 tokens / 3746ms e Chat 201 / 1392 tokens / 2328ms, com `DevLog` gravado. Mensagens de teste removidas do banco após a validação.
-7. **Pendências para a próxima rodada**: persistir AIConfig e AIKnowledge (ensinar IA), hidratar quickReplies/devLogs, webhooks da Evolution API e testes automatizados de rota.
+7. **Fase 7 publicada**: configuração da IA e base de conhecimento persistidas (`/api/ai-config`, `/api/knowledge`), com validação de payload, exclusão de ensinamentos e efeito real no prompt confirmado (tom "vendedor/expressivo" mudou a resposta da OpenAI).
+8. **Pendências para a próxima rodada**: persistir quickReplies, hidratar a Área Dev com `DevLog` real, editar conhecimento existente, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.

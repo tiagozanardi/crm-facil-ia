@@ -1,4 +1,13 @@
-import { Product, StoreSettings, Lead, ChatConversation, ChatMessage, LeadStage } from '../types';
+import {
+  Product,
+  StoreSettings,
+  Lead,
+  ChatConversation,
+  ChatMessage,
+  LeadStage,
+  AIConfig,
+  AIKnowledgeItem,
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -284,5 +293,74 @@ export const apiService = {
     });
     if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
     return await res.json();
+  },
+
+  // ----------------------------------------------------------------
+  // Configuração da Linguagem da IA
+  // ----------------------------------------------------------------
+  async getAIConfig(): Promise<AIConfig | null> {
+    try {
+      const res = await fetch(`${API_BASE}/ai-config`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async updateAIConfig(config: Partial<AIConfig>): Promise<AIConfig | null> {
+    try {
+      const res = await fetch(`${API_BASE}/ai-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (error) {
+      console.warn('Falha ao salvar configuração da IA:', error);
+      return null;
+    }
+  },
+
+  // ----------------------------------------------------------------
+  // Base de Conhecimento (RAG / "Ensinar IA")
+  // ----------------------------------------------------------------
+  async getKnowledge(): Promise<AIKnowledgeItem[] | null> {
+    try {
+      const res = await fetch(`${API_BASE}/knowledge`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async addKnowledge(item: {
+    question: string;
+    answer: string;
+    source?: 'humano_chat' | 'manual';
+  }): Promise<AIKnowledgeItem | null> {
+    try {
+      const res = await fetch(`${API_BASE}/knowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (error) {
+      console.warn('Falha ao salvar conhecimento da IA:', error);
+      return null;
+    }
+  },
+
+  async deleteKnowledge(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/knowledge/${id}`, { method: 'DELETE' });
+      return res.ok;
+    } catch {
+      return false;
+    }
   },
 };

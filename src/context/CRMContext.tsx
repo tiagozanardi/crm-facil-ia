@@ -70,6 +70,7 @@ interface CRMContextType {
   aiConfig: AIConfig;
   updateAIConfig: (config: Partial<AIConfig>) => void;
   aiKnowledge: AIKnowledgeItem[];
+  removeKnowledge: (id: string) => void;
   storeSettings: StoreSettings;
   updateStoreSettings: (settings: Partial<StoreSettings>) => void;
   campaigns: FollowUpCampaign[];
@@ -110,13 +111,21 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     async function loadBackendData() {
       try {
-        const [backendProducts, backendStore, backendLeads, backendConversations] =
-          await Promise.all([
-            apiService.getProducts(),
-            apiService.getStoreSettings(),
-            apiService.getLeads(),
-            apiService.getConversations(),
-          ]);
+        const [
+          backendProducts,
+          backendStore,
+          backendLeads,
+          backendConversations,
+          backendAIConfig,
+          backendKnowledge,
+        ] = await Promise.all([
+          apiService.getProducts(),
+          apiService.getStoreSettings(),
+          apiService.getLeads(),
+          apiService.getConversations(),
+          apiService.getAIConfig(),
+          apiService.getKnowledge(),
+        ]);
 
         if (!isMounted) return;
 
@@ -138,6 +147,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             byLead[conv.leadId] = conv;
           }
           setConversations(byLead);
+        }
+        if (backendAIConfig) {
+          setAIConfig(backendAIConfig);
+        }
+        if (backendKnowledge) {
+          setAiKnowledge(backendKnowledge);
         }
       } catch (err) {
         console.warn('Backend offline ou inacessível. Usando mock inicial:', err);
@@ -325,8 +340,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const teachAIFromMessage = (text: string, referenceQuestion = 'Dúvida do cliente no atendimento') => {
+    const tempId = `k-${Date.now()}`;
     const newItem: AIKnowledgeItem = {
-      id: `k-${Date.now()}`,
+      id: tempId,
       question: referenceQuestion,
       answer: text,
       createdAt: new Date().toLocaleString(),
@@ -334,6 +350,21 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setAiKnowledge(prev => [newItem, ...prev]);
     addNotification('✨ Conhecimento absorvido! A IA aprenderá com esta resposta para os próximos clientes.');
+
+    // Persiste no PostgreSQL: o RAG da IA passa a usar este ensinamento.
+    apiService.addKnowledge({
+      question: referenceQuestion,
+      answer: text,
+      source: 'humano_chat',
+    }).then(saved => {
+      if (saved) {
+        setAiKnowledge(prev => prev.map(item => item.id === tempId ? saved : item));
+      } else {
+        addNotification('⚠️ Não foi possível salvar o conhecimento no banco. Tente novamente.');
+      }
+    }).catch(() => {
+      addNotification('⚠️ Não foi possível salvar o conhecimento no banco. Tente novamente.');
+    });
 
     // Adiciona log
     setDevLogs(prev => [
@@ -349,6 +380,17 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]);
   };
 
+  const removeKnowledge = (id: string) => {
+    setAiKnowledge(prev => prev.filter(item => item.id !== id));
+    apiService.deleteKnowledge(id).then(ok => {
+      if (!ok) {
+        addNotification('⚠️ Não foi possível remover o conhecimento do banco.');
+      }
+    }).catch(() => {
+      addNotification('⚠️ Não foi possível remover o conhecimento do banco.');
+    });
+  };
+
   const addQuickReply = (reply: Omit<QuickReply, 'id'>) => {
     setQuickReplies(prev => [...prev, { ...reply, id: `qr-${Date.now()}` }]);
     addNotification('Resposta rápida cadastrada com sucesso!');
@@ -356,6 +398,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateAIConfig = (newCfg: Partial<AIConfig>) => {
     setAIConfig(prev => ({ ...prev, ...newCfg }));
+    apiService.updateAIConfig(newCfg).then(saved => {
+      if (!saved) {
+        addNotification('⚠️ Configuração aplicada na tela, mas não foi salva no banco.');
+      }
+    }).catch(() => {
+      addNotification('⚠️ Configuração aplicada na tela, mas não foi salva no banco.');
+    });
     addNotification('Configurações da IA atualizadas!');
   };
 
@@ -442,6 +491,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       aiConfig,
       updateAIConfig,
       aiKnowledge,
+      removeKnowledge,
       storeSettings,
       updateStoreSettings,
       campaigns,

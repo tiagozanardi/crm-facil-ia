@@ -16,7 +16,8 @@ import {
   Info,
   HelpCircle,
   AlertCircle,
-  Cpu
+  Cpu,
+  Trash2
 } from 'lucide-react';
 import { apiService, ChatHistoryEntry } from '../services/api';
 
@@ -27,6 +28,7 @@ export const AILanguageView: React.FC = () => {
     quickReplies, 
     addQuickReply,
     aiKnowledge,
+    removeKnowledge,
     storeSettings
   } = useCRM();
 
@@ -417,11 +419,26 @@ export const AILanguageView: React.FC = () => {
               </div>
               <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
                 {aiKnowledge.map((item) => (
-                  <div key={item.id} className="p-2 rounded-lg bg-gray-50 border border-gray-100 text-[11px]">
-                    <span className="font-semibold text-gray-800">"{item.question}"</span>
+                  <div key={item.id} className="p-2 rounded-lg bg-gray-50 border border-gray-100 text-[11px] group">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-gray-800">"{item.question}"</span>
+                      <button
+                        type="button"
+                        onClick={() => removeKnowledge(item.id)}
+                        className="shrink-0 p-0.5 rounded text-gray-300 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="Remover este conhecimento da base da IA"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                     <p className="text-gray-600 mt-0.5 truncate">{item.answer}</p>
                   </div>
                 ))}
+                {aiKnowledge.length === 0 && (
+                  <p className="text-[11px] text-gray-400 italic">
+                    Nenhum ensinamento ainda. No chat, responda um cliente e clique em "Ensinar IA com esta resposta".
+                  </p>
+                )}
               </div>
             </div>
 
