@@ -23,6 +23,7 @@ import {
   initialKnowledge,
   initialProducts 
 } from '../mock/initialData';
+import { apiService } from '../services/api';
 
 export type ViewType = 
   | 'dashboard' 
@@ -92,6 +93,36 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     root.style.setProperty('--color-brand-500', storeSettings.theme.primaryColor);
     root.style.setProperty('--color-accent', storeSettings.theme.accentColor);
   }, [storeSettings.theme]);
+
+  // Carregar dados reais do backend (PostgreSQL) com fallback resiliente
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBackendData() {
+      try {
+        const [backendProducts, backendStore] = await Promise.all([
+          apiService.getProducts(),
+          apiService.getStoreSettings(),
+        ]);
+
+        if (!isMounted) return;
+
+        if (backendProducts && backendProducts.length > 0) {
+          setProducts(backendProducts);
+        }
+        if (backendStore) {
+          setStoreSettings(backendStore);
+        }
+      } catch (err) {
+        console.warn('Backend offline ou inacessível. Usando mock inicial:', err);
+      }
+    }
+
+    loadBackendData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const addNotification = (msg: string) => {
     setNotification(msg);
@@ -239,27 +270,42 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateStoreSettings = (newSettings: Partial<StoreSettings>) => {
     setStoreSettings(prev => ({ ...prev, ...newSettings }));
+    apiService.updateStoreSettings(newSettings).catch(err => {
+      console.warn('Falha ao sincronizar configurações da loja com a API:', err);
+    });
     addNotification('Dados da loja e personalização salvos!');
   };
 
   const [products, setProducts] = useState<Product[]>(initialProducts);
 
   const addProduct = (prod: Omit<Product, 'id'>) => {
-    const newProd: Product = {
-      ...prod,
-      id: `prod-${Date.now()}`
-    };
-    setProducts(prev => [newProd, ...prev]);
-    addNotification(`Produto "${newProd.name}" cadastrado com sucesso!`);
+    const tempId = `prod-${Date.now()}`;
+    const optimisticProd: Product = { ...prod, id: tempId };
+    setProducts(prev => [optimisticProd, ...prev]);
+    addNotification(`Produto "${optimisticProd.name}" cadastrado com sucesso!`);
+
+    apiService.createProduct(prod).then(persisted => {
+      if (persisted) {
+        setProducts(prev => prev.map(p => p.id === tempId ? persisted : p));
+      }
+    }).catch(err => {
+      console.warn('Falha ao persistir produto na API:', err);
+    });
   };
 
   const updateProduct = (id: string, updated: Partial<Product>) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    apiService.updateProduct(id, updated).catch(err => {
+      console.warn('Falha ao atualizar produto na API:', err);
+    });
     addNotification('Produto atualizado!');
   };
 
   const deleteProduct = (id: string) => {
     setProducts(prev => prev.filter(p => p.id !== id));
+    apiService.deleteProduct(id).catch(err => {
+      console.warn('Falha ao excluir produto na API:', err);
+    });
     addNotification('Produto removido do catálogo.');
   };
 
@@ -271,6 +317,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return p;
     }));
+    apiService.updateStock(id, delta).catch(err => {
+      console.warn('Falha ao sincronizar alteração de estoque com a API:', err);
+    });
   };
 
   const toggleCampaign = (id: string) => {
