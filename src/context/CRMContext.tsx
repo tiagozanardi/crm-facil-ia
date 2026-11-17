@@ -52,6 +52,16 @@ interface CRMContextType {
   selectedChatLeadId: string | null;
   setSelectedChatLeadId: (id: string | null) => void;
   sendMessage: (leadId: string, text: string, sender: 'client' | 'ai' | 'agent') => void;
+  generateAIReplyForLead: (
+    leadId: string,
+    options?: { persist?: boolean },
+  ) => Promise<{
+    response: string;
+    persisted: boolean;
+    tokensUsed: number;
+    latencyMs: number;
+    model: string;
+  }>;
   pauseAIForLead: (leadId: string, hours?: number) => void;
   resumeAIForLead: (leadId: string) => void;
   teachAIFromMessage: (text: string, referenceQuestion?: string) => void;
@@ -100,10 +110,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     async function loadBackendData() {
       try {
-        const [backendProducts, backendStore] = await Promise.all([
-          apiService.getProducts(),
-          apiService.getStoreSettings(),
-        ]);
+        const [backendProducts, backendStore, backendLeads, backendConversations] =
+          await Promise.all([
+            apiService.getProducts(),
+            apiService.getStoreSettings(),
+            apiService.getLeads(),
+            apiService.getConversations(),
+          ]);
 
         if (!isMounted) return;
 
@@ -112,6 +125,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (backendStore) {
           setStoreSettings(backendStore);
+        }
+        if (backendLeads && backendLeads.length > 0) {
+          setLeads(backendLeads);
+          setSelectedChatLeadId((prev) =>
+            prev && backendLeads.some((l) => l.id === prev) ? prev : backendLeads[0].id,
+          );
+        }
+        if (backendConversations && backendConversations.length > 0) {
+          const byLead: Record<string, ChatConversation> = {};
+          for (const conv of backendConversations) {
+            byLead[conv.leadId] = conv;
+          }
+          setConversations(byLead);
         }
       } catch (err) {
         console.warn('Backend offline ou inacessível. Usando mock inicial:', err);
@@ -133,6 +159,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateLeadStage = (id: string, stage: LeadStage) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l));
+    apiService.updateLeadStage(id, stage).catch(err => {
+      console.warn('Falha ao persistir estágio do lead:', err);
+    });
     // If closed or moved to human intervention, sync conversation state
     if (stage === 'fechado') {
       addNotification(`🎉 Parabéns! Venda fechada com sucesso!`);
@@ -142,7 +171,41 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleLeadUrgency = (id: string) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, urgent: !l.urgent } : l));
+    const lead = leads.find(l => l.id === id);
+    const nextUrgent = !lead?.urgent;
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, urgent: nextUrgent } : l));
+    apiService.setLeadUrgency(id, nextUrgent, lead?.urgentReason).catch(err => {
+      console.warn('Falha ao persistir urgência do lead:', err);
+    });
+  };
+
+  const appendMessage = (leadId: string, newMsg: ChatMessage) => {
+    setConversations(prev => {
+      const lead = leads.find(l => l.id === leadId);
+      const existing = prev[leadId] || {
+        id: `conv-${leadId}`,
+        leadId,
+        phone: lead?.phone || '',
+        leadName: lead?.name || 'Cliente',
+        stage: 'atendimento_ia',
+        aiStatus: 'active',
+        lastMessage: '',
+        lastTime: '',
+        messages: []
+      };
+
+      return {
+        ...prev,
+        [leadId]: {
+          ...existing,
+          lastMessage: newMsg.text,
+          lastTime: newMsg.timestamp,
+          messages: [...existing.messages, newMsg]
+        }
+      };
+    });
+
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lastInteraction: 'agora' } : l));
   };
 
   const sendMessage = (leadId: string, text: string, sender: 'client' | 'ai' | 'agent') => {
@@ -155,28 +218,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       read: true
     };
 
-    setConversations(prev => {
-      const existing = prev[leadId] || {
-        id: `conv-${leadId}`,
-        leadId,
-        phone: leads.find(l => l.id === leadId)?.phone || '',
-        leadName: leads.find(l => l.id === leadId)?.name || 'Cliente',
-        stage: 'atendimento_ia',
-        aiStatus: 'active',
-        lastMessage: '',
-        lastTime: '',
-        messages: []
-      };
+    appendMessage(leadId, newMsg);
 
-      return {
-        ...prev,
-        [leadId]: {
-          ...existing,
-          lastMessage: text,
-          lastTime: newMsg.timestamp,
-          messages: [...existing.messages, newMsg]
-        }
-      };
+    // Persiste no PostgreSQL (se o backend estiver offline, a UI continua funcionando)
+    apiService.sendLeadMessage(leadId, text, sender).catch(err => {
+      console.warn('Falha ao persistir mensagem na API:', err);
     });
 
     // Se quem respondeu foi o lojista/atendente humano:
@@ -199,6 +245,45 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  /**
+   * Chama a IA com o histórico real da conversa (persistida no banco) e
+   * adiciona a resposta como mensagem do chat. Com persist=false devolve
+   * apenas uma sugestão de texto (usada quando a IA está pausada).
+   * Lança erro com mensagem amigável quando backend/chave não estão disponíveis.
+   */
+  const generateAIReplyForLead = async (
+    leadId: string,
+    options: { persist?: boolean } = {},
+  ) => {
+    const persist = options.persist ?? true;
+    const result = await apiService.generateAIReplyForLead(leadId, { persist });
+
+    if (result.persisted && result.message) {
+      appendMessage(leadId, result.message);
+    }
+
+    setDevLogs(prev => [
+      {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        level: 'ai_call',
+        service: 'OpenAI',
+        message: `IA gerou resposta no chat do lead ${leadId}${persist ? '' : ' (sugestão)'}. Modelo: ${result.model} • ${result.tokensUsed} tokens • ${result.latencyMs}ms.`,
+        details: { model: result.model, tokensUsed: result.tokensUsed, latencyMs: result.latencyMs },
+        storeId: 'malas-slz'
+      },
+      ...prev
+    ]);
+
+    return {
+      response: result.response,
+      persisted: result.persisted,
+      tokensUsed: result.tokensUsed,
+      latencyMs: result.latencyMs,
+      model: result.model,
+    };
+  };
+
   const pauseAIForLead = (leadId: string, hours = storeSettings.interventionPauseHours) => {
     const until = new Date(Date.now() + hours * 3600 * 1000).toLocaleString();
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, aiStatus: 'paused', pausedUntil: until, stage: 'intervencao_humana' } : l));
@@ -213,6 +298,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           stage: 'intervencao_humana'
         }
       };
+    });
+    apiService.setLeadAIStatus(leadId, 'paused', hours).catch(err => {
+      console.warn('Falha ao persistir pausa da IA:', err);
     });
   };
 
@@ -229,6 +317,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           stage: 'atendimento_ia'
         }
       };
+    });
+    apiService.setLeadAIStatus(leadId, 'active').catch(err => {
+      console.warn('Falha ao persistir retomada da IA:', err);
     });
     addNotification('IA reativada com sucesso para este chat!');
   };
@@ -342,6 +433,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedChatLeadId,
       setSelectedChatLeadId,
       sendMessage,
+      generateAIReplyForLead,
       pauseAIForLead,
       resumeAIForLead,
       teachAIFromMessage,

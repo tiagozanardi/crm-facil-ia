@@ -1,4 +1,4 @@
-import { Product, StoreSettings } from '../types';
+import { Product, StoreSettings, Lead, ChatConversation, ChatMessage, LeadStage } from '../types';
 
 const API_BASE = '/api';
 
@@ -12,6 +12,41 @@ export interface AIGenerateResult {
   model: string;
   tokensUsed: number;
   latencyMs: number;
+}
+
+export interface AIReplyResult {
+  response: string;
+  persisted: boolean;
+  message?: ChatMessage;
+  model: string;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
+export interface SendMessageResult {
+  message: ChatMessage;
+  aiPaused: boolean;
+  sender: 'client' | 'ai' | 'agent';
+}
+
+/** Erro de API com mensagem já amigável para exibir no toast do lojista. */
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+  }
+}
+
+async function parseError(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    return body?.error || `Falha na requisição (HTTP ${res.status}).`;
+  } catch {
+    return `Falha na requisição (HTTP ${res.status}).`;
+  }
 }
 
 export const apiService = {
@@ -137,5 +172,117 @@ export const apiService = {
       console.warn('Backend de IA offline ou inacessível:', error);
       return null;
     }
+  },
+
+  // ----------------------------------------------------------------
+  // Leads & Pipeline
+  // ----------------------------------------------------------------
+  async getLeads(): Promise<Lead[] | null> {
+    try {
+      const res = await fetch(`${API_BASE}/leads`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async updateLeadStage(leadId: string, stage: LeadStage): Promise<Lead | null> {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${leadId}/stage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage }),
+      });
+      if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+      return await res.json();
+    } catch (error) {
+      if (error instanceof ApiRequestError) throw error;
+      console.warn('Falha ao sincronizar estágio do lead:', error);
+      return null;
+    }
+  },
+
+  async setLeadAIStatus(
+    leadId: string,
+    status: 'active' | 'paused',
+    hours?: number,
+  ): Promise<Lead | null> {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${leadId}/ai-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, hours }),
+      });
+      if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+      return await res.json();
+    } catch (error) {
+      if (error instanceof ApiRequestError) throw error;
+      console.warn('Falha ao sincronizar status da IA:', error);
+      return null;
+    }
+  },
+
+  async setLeadUrgency(
+    leadId: string,
+    urgent: boolean,
+    urgentReason?: string,
+  ): Promise<Lead | null> {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${leadId}/urgency`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urgent, urgentReason }),
+      });
+      if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+      return await res.json();
+    } catch (error) {
+      if (error instanceof ApiRequestError) throw error;
+      console.warn('Falha ao sincronizar urgência do lead:', error);
+      return null;
+    }
+  },
+
+  // ----------------------------------------------------------------
+  // Conversas & Mensagens
+  // ----------------------------------------------------------------
+  async getConversations(): Promise<ChatConversation[] | null> {
+    try {
+      const res = await fetch(`${API_BASE}/conversations`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async sendLeadMessage(
+    leadId: string,
+    text: string,
+    sender: 'client' | 'ai' | 'agent',
+  ): Promise<SendMessageResult> {
+    const res = await fetch(`${API_BASE}/conversations/${leadId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, sender }),
+    });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  // Gera a resposta da IA com o histórico real da conversa e persiste no banco.
+  // Com persist=false devolve apenas o texto (sugestão), sem gravar mensagem.
+  async generateAIReplyForLead(
+    leadId: string,
+    options: { message?: string; persist?: boolean } = {},
+  ): Promise<AIReplyResult> {
+    const { message, persist = true } = options;
+    const res = await fetch(`${API_BASE}/conversations/${leadId}/ai-reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...(message ? { message } : {}), persist }),
+    });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
   },
 };

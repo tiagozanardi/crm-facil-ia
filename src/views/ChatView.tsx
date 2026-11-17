@@ -18,7 +18,8 @@ import {
   X,
   ExternalLink,
   Plus,
-  Package
+  Package,
+  Loader2
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
@@ -28,12 +29,14 @@ export const ChatView: React.FC = () => {
     selectedChatLeadId, 
     setSelectedChatLeadId, 
     sendMessage, 
+    generateAIReplyForLead,
     pauseAIForLead, 
     resumeAIForLead, 
     teachAIFromMessage, 
     quickReplies,
     products,
-    storeSettings
+    storeSettings,
+    addNotification
   } = useCRM();
 
   const [inputMessage, setInputMessage] = useState('');
@@ -41,6 +44,7 @@ export const ChatView: React.FC = () => {
   const [showQuickRepliesModal, setShowQuickRepliesModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
   const [learningMessageId, setLearningMessageId] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Filtro de conversas por telefone ou nome
   const filteredLeads = leads.filter(l => 
@@ -74,6 +78,32 @@ export const ChatView: React.FC = () => {
     teachAIFromMessage(msgText, `Dúvida do cliente atendido em ${activeLead?.name}`);
     setLearningMessageId(msgId);
     setTimeout(() => setLearningMessageId(null), 3000);
+  };
+
+  // Gera uma resposta com GPT usando o catálogo + histórico real da conversa.
+  // Se a IA estiver pausada (intervenção humana), vira sugestão no campo de texto.
+  const handleAskAI = async () => {
+    if (!activeLead || aiLoading) return;
+
+    const isPaused = activeLead.aiStatus === 'paused';
+    setAiLoading(true);
+
+    try {
+      const result = await generateAIReplyForLead(activeLead.id, { persist: !isPaused });
+
+      if (result.persisted) {
+        addNotification(
+          `✨ IA respondeu com o catálogo e o histórico (${result.tokensUsed} tokens • ${result.latencyMs}ms).`,
+        );
+      } else {
+        setInputMessage(result.response);
+        addNotification('💡 Sugestão da IA inserida no campo. Revise e envie como atendente.');
+      }
+    } catch (err: any) {
+      addNotification(`❌ ${err?.message || 'Não foi possível gerar a resposta da IA.'}`);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   return (
@@ -300,6 +330,25 @@ export const ChatView: React.FC = () => {
           <div className="p-3 bg-white border-t border-gray-200">
             {/* Atalhos Rápidos Clicáveis */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+              <button
+                type="button"
+                onClick={handleAskAI}
+                disabled={aiLoading}
+                className="shrink-0 px-2.5 py-1 rounded-full bg-gradient-to-r from-brand-500 to-brand-600 text-white text-[11px] font-bold border border-brand-600 hover:from-brand-600 hover:to-brand-700 disabled:opacity-60 disabled:cursor-wait flex items-center gap-1 shadow-xs transition-all"
+                title={
+                  activeLead.aiStatus === 'paused'
+                    ? 'IA pausada por intervenção humana: gera uma sugestão para você revisar e enviar'
+                    : 'Gerar resposta automática da IA com o catálogo e o histórico da conversa'
+                }
+              >
+                {aiLoading ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3" />
+                )}
+                {aiLoading ? 'IA pensando...' : 'Responder com IA'}
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowQuickRepliesModal(true)}

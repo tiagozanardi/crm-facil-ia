@@ -14,5 +14,5 @@
     "noFallthroughCasesInSwitch": true,
     "outDir": "dist-server"
   },
-  "include": ["server/**/*.ts", "scripts/**/*.ts", "api/**/*.ts"]
+  "include": ["server/**/*.ts", "scripts/**/*.ts", "api/**/*.ts", "prisma/**/*.ts"]
 }

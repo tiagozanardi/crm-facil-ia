@@ -1,7 +1,6 @@
 # PROJETO: CRM ÁGIL + IA (CLIENTE PILOTO: MALAS SLZ)
 > **Arquivo Central de Handoff & Estado do Projeto**
 > Última atualização: 2026-11-17 | Plataformas: Antigravity + DeepSeek Harness
-
 ---
 
 ## 1. Visão Geral do Produto
@@ -48,6 +47,13 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - Rota `POST /api/ai/generate` com multi-turno, registra DevLog automático (tokens, latência, modelo).
   - Playground da IA (`AILanguageView`) renovado: respostas reais do GPT-4o-mini, bolhas multi-turno, metadados (tokens/latência), fallback resiliente com aviso se backend offline.
   - Modelo configurável via `OPENAI_MODEL` no `.env` (padrão: `gpt-4o-mini`).
+- [x] **Fase 6 - IA no Chat + Rotas de Leads e Conversas**:
+  - `server/services/ai.ts`: geração de resposta centralizada (usada pelo Playground e pelo chat), com prompt dinâmico, histórico multi-turno e DevLog.
+  - `server/routes/leads.ts` e `server/routes/conversations.ts`: pipeline e chats persistidos no PostgreSQL (estágio, urgência, pausa da IA, mensagens e última mensagem).
+  - Regra de intervenção humana no backend: atendente responde → IA pausa por `interventionPauseHours`; pausas vencidas voltam sozinhas.
+  - ChatView ganhou o botão **"Responder com IA"**: responde com o histórico real do banco; se a IA estiver pausada, gera apenas uma sugestão no campo de texto.
+  - `prisma/seed-leads.ts` (`npm run seed:leads`): seed idempotente com os leads de demonstração (Camila, Rodrigo, Beatriz, Marcelo e Juliana) — banco agora tem 5 leads e 15 mensagens.
+  - Frontend hidrata leads e conversas do banco com fallback resiliente para os mocks.
 
 ---
 
@@ -59,13 +65,15 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
    npx prisma studio
    ```
    Acesse: `http://localhost:5555` para ver todas as tabelas e dados da Malas SLZ.
+4. **Popular os leads de demonstração (idempotente, não apaga nada)**: `npm run seed:leads`
+5. **Chave da OpenAI**: coloque `OPENAI_API_KEY="sk-..."` no `.env` (arquivo gitignored). Sem ela, o Playground e o botão "Responder com IA" exibem aviso amigável em vez de quebrar.
 
 ---
 
 ## 5. Parceria entre Plataformas (GitHub como fonte da verdade)
 
 - **Remoto**: `https://github.com/tiagozanardi/crm-facil-ia.git` (branch `main`).
-- **Estado sincronizado**: em 2026-11-17 o `main` local foi alinhado e enviado ao GitHub — commit `1a9dbd4` (Fase 5) enviado, incluindo os 2 commits pendentes (`cf1f0a4` e `dc534c6`). O remoto estava em `472442b`.
+- **Estado sincronizado**: em 2026-11-17 o `main` local foi alinhado e enviado ao GitHub. O remoto estava em `472442b`; foram publicados os commits da Fase 5 (`cf1f0a4`, `dc534c6`, `1a9dbd4`), o registro desta parceria (`e72b66b`) e a Fase 6. **Confira sempre com `git status -sb` antes de começar.**
 - **Regra de ouro**: `git pull` antes de começar qualquer tarefa e `git push` ao concluir. Nunca deixar trabalho apenas em staging local — o outro agente não enxerga.
 - **Configuração local necessária no Windows** (por causa do schannel + sandbox de terminal):
   ```powershell
@@ -83,3 +91,4 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md`](./docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md) (Modelagem completa do PostgreSQL no Supabase com Prisma ORM e Seed).
 - [`docs/features/04-camada-api-backend-express-hibrido.md`](./docs/features/04-camada-api-backend-express-hibrido.md) (Backend Express híbrido com CRUD de Produtos e Store, fallback resiliente e adaptador Vercel Serverless).
 - [`docs/features/05-integracao-openai-playground.md`](./docs/features/05-integracao-openai-playground.md) (Integração OpenAI GPT-4o-mini com system prompt dinâmico, multi-turno e DevLog automático no Playground da IA).
+- [`docs/features/06-ia-no-chat-e-rotas-leads-conversas.md`](./docs/features/06-ia-no-chat-e-rotas-leads-conversas.md) (IA no Chat com histórico real, persistência de leads/conversas, pausa de intervenção humana e seed idempotente de leads).

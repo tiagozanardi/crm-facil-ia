@@ -4,6 +4,8 @@ import { healthRouter } from './routes/health';
 import { productsRouter } from './routes/products';
 import { storeRouter } from './routes/store';
 import { aiRouter } from './routes/ai';
+import { leadsRouter } from './routes/leads';
+import { conversationsRouter } from './routes/conversations';
 
 export const app = express();
 
@@ -16,6 +18,8 @@ app.use('/api/health', healthRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/store', storeRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/leads', leadsRouter);
+app.use('/api/conversations', conversationsRouter);
 
 // Fallback para rota não encontrada
 app.use((_req, res) => {
