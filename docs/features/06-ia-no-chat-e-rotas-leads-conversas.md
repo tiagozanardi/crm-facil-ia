@@ -1,7 +1,7 @@
 # Feature Handoff: IA no Chat + Rotas de Leads e Conversas
 - **Data**: 2026-11-17
 - **Agente / Plataforma**: DeepSeek Harness (deepseek-flash)
-- **Status**: Concluído (código validado; teste da IA real pendente de chave no `.env`)
+- **Status**: Concluído e validado com a chave real da OpenAI
 
 ---
 
@@ -79,9 +79,25 @@ Fechar a Fase 6 do projeto: tirar a IA do Playground e colocá-la dentro do aten
 
 ---
 
+### 4.1. Validação real executada (2026-11-17, chave da OpenAI configurada no `.env`)
+
+| Verificação | Resultado |
+|---|---|
+| `POST /api/ai/generate` (Playground) | HTTP **200** · modelo `gpt-4o-mini` · API **3746ms** · **1403 tokens** |
+| `POST /api/conversations/:leadId/ai-reply` (Chat, persistindo) | HTTP **201** · **2328ms** · **1392 tokens** · mensagem gravada com `sender = AI` |
+| Conteúdo gerado | Citou o produto certo do catálogo, preço Pix (R$ 781 / R$ 119), estoque, medidas ANAC e CTA do Grupo VIP — sem alucinar item fora do catálogo |
+| `DevLog` no PostgreSQL | 2 registros `AI_CALL` / `OPENAI` confirmados (1312 in / 80 out e 1321 in / 82 out, com `latencyMs`) |
+| Typecheck | `tsc -b` (frontend) e `tsc -p tsconfig.server.json` (backend + prisma) sem erros |
+| Build de produção | `npm run build` OK (2111 módulos, bundle 370 kB) |
+| Hidratação do banco | 5 leads, 5 conversas e 15 mensagens vindos do Supabase (dashboard e chats conferidos por screenshot) |
+
+As mensagens criadas nos testes foram **removidas do banco** ao final (conversa restaurada), mantendo os DevLogs como registro real da chamada. O banco continua com os dados do seed.
+
+---
+
 ### 5. Pendências ou Próximos Passos
 
-- **Testar a IA real** com a chave no `.env` (validação feita até aqui: rota retorna 503 corretamente sem chave; build e typecheck passam).
+- ~~Testar a IA real com a chave no `.env`~~ — **feito em 2026-11-17** (resultados na seção 4.1).
 - **Persistir AIConfig** no banco: hoje tom/emojis/gírias/CTA continuam só no estado do React. Criar `server/routes/aiConfig.ts` + `GET/PUT /api/ai-config`.
 - **Persistir "Ensinar IA com esta resposta"**: hoje cria apenas `AIKnowledgeItem` local; falta `POST /api/knowledge` gravando `AIKnowledge`.
 - **Hidratar quickReplies e devLogs** do banco (hoje ainda vêm dos mocks; a Área Dev só vê os logs locais + os gerados nesta sessão).
