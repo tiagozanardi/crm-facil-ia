@@ -1,6 +1,6 @@
 # PROJETO: CRM ÁGIL + IA (CLIENTE PILOTO: MALAS SLZ)
 > **Arquivo Central de Handoff & Estado do Projeto**
-> Última atualização: 2026-11-17 | Plataforma atual: Antigravity
+> Última atualização: 2026-11-17 | Plataformas: Antigravity + DeepSeek Harness
 
 ---
 
@@ -62,7 +62,22 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 
 ---
 
-## 5. Histórico de Handoffs de Features
+## 5. Parceria entre Plataformas (GitHub como fonte da verdade)
+
+- **Remoto**: `https://github.com/tiagozanardi/crm-facil-ia.git` (branch `main`).
+- **Estado sincronizado**: em 2026-11-17 o `main` local foi alinhado e enviado ao GitHub — commit `1a9dbd4` (Fase 5) enviado, incluindo os 2 commits pendentes (`cf1f0a4` e `dc534c6`). O remoto estava em `472442b`.
+- **Regra de ouro**: `git pull` antes de começar qualquer tarefa e `git push` ao concluir. Nunca deixar trabalho apenas em staging local — o outro agente não enxerga.
+- **Configuração local necessária no Windows** (por causa do schannel + sandbox de terminal):
+  ```powershell
+  git config --local http.sslBackend openssl
+  git config --local credential.https://github.com.helper "!gh auth git-credential"
+  ```
+  Sem isso, `git fetch/push` falha com `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`.
+- **Observação DSH**: `npm run build` (esbuild) e `git push` (credential helper via `sh`) precisam rodar com permissão ampliada fora do sandbox padrão de escrita do workspace.
+
+---
+
+## 6. Histórico de Handoffs de Features
 - [`docs/features/01-setup-multiagente-e-frontend-base.md`](./docs/features/01-setup-multiagente-e-frontend-base.md) (Setup multiagente e Frontend base).
 - [`docs/features/02-catalogo-de-produtos-e-estoque.md`](./docs/features/02-catalogo-de-produtos-e-estoque.md) (Catálogo de produtos, estoque com fotos e integração com chat).
 - [`docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md`](./docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md) (Modelagem completa do PostgreSQL no Supabase com Prisma ORM e Seed).
