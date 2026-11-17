@@ -14,8 +14,11 @@ import {
   Save, 
   Check, 
   Info,
-  HelpCircle
+  HelpCircle,
+  AlertCircle,
+  Cpu
 } from 'lucide-react';
+import { apiService, ChatHistoryEntry } from '../services/api';
 
 export const AILanguageView: React.FC = () => {
   const { 
@@ -31,60 +34,65 @@ export const AILanguageView: React.FC = () => {
   const [simulationInput, setSimulationInput] = useState('Vocês têm mala de bordo que não precisa despachar na Azul e Gol?');
   const [simulationResponse, setSimulationResponse] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [lastMeta, setLastMeta] = useState<{ model: string; tokens: number; latencyMs: number } | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
 
   // Estado para cadastro de nova resposta rápida
   const [newTitle, setNewTitle] = useState('');
   const [newShortcut, setNewShortcut] = useState('');
   const [newContent, setNewContent] = useState('');
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
+    if (!simulationInput.trim()) return;
     setIsSimulating(true);
     setSimulationResponse('');
+    setSimulationError(null);
+    setLastMeta(null);
 
-    setTimeout(() => {
+    // Tenta usar a IA real via backend
+    const result = await apiService.generateAIResponse(simulationInput, chatHistory);
+
+    if (result) {
+      setSimulationResponse(result.response);
+      setLastMeta({ model: result.model, tokens: result.tokensUsed, latencyMs: result.latencyMs });
+      // Mantém histórico para multi-turno
+      setChatHistory(prev => [
+        ...prev,
+        { role: 'user', content: simulationInput },
+        { role: 'assistant', content: result.response },
+      ]);
+    } else {
+      // Fallback: simulação local sem API (backend offline ou chave não configurada)
+      setSimulationError('⚠️ Backend offline ou OPENAI_API_KEY não configurada. Exibindo prévia local.');
       let response = '';
-      
-      // Aplicar tom
       if (aiConfig.tone === 'consultivo') {
-        response = 'Olá! Com certeza! Nossas malas de bordo da Malas SLZ foram desenhadas nas dimensões exatas de 55x35x25cm (padrão ANAC), garantindo que você viaje tranquilamente na Azul, Gol e Latam sem qualquer risco de despacho forçado. ';
+        response = 'Olá! Com certeza! Nossas malas de bordo foram desenhadas nas dimensões exatas de 55x35x25cm (padrão ANAC), garantindo embarque tranquilo na Azul, Gol e Latam sem risco de despacho. ';
       } else if (aiConfig.tone === 'vendedor') {
-        response = 'Opa! Temos sim e estão com uma super condição nesta semana! Nossas malas de bordo 10kg atendem 100% as normas da Azul e Gol com rodinhas 360° em polipropileno ultrarresistente. ';
+        response = 'Opa! Temos sim e estão com super condição! Nossas malas de bordo 10kg atendem 100% as normas da Azul e Gol. ';
       } else if (aiConfig.tone === 'direto') {
         response = 'Sim! Malas de bordo 55x35x25cm homologadas para Azul, Gol e Latam. ';
       } else {
-        response = 'Oi, tudo bem com você? Temos sim, com todo carinho! Nossas malas de bordo atendem perfeitamente as regras da Azul e Gol para você viajar sem preocupação. ';
+        response = 'Oi! Temos sim, com todo carinho! Nossas malas de bordo atendem perfeitamente as regras para você viajar sem preocupação. ';
       }
-
-      // Aplicar gírias/regionalismo
-      if (aiConfig.slangType === 'regional_slz') {
-        response += 'Mermã, é garantia de viagem sem estresse nenhum por aqui! ';
-      } else if (aiConfig.slangType === 'descontraido') {
-        response += 'É sucesso garantido no seu próximo voo! ';
-      }
-
-      // Aplicar CTA
-      if (aiConfig.ctaStrategy === 'grupo_vip_whatsapp') {
-        response += 'Inclusive, estamos liberando um cupom de 15% exclusivo dentro do nosso Grupo VIP no WhatsApp. Posso te enviar o link?';
-      } else if (aiConfig.ctaStrategy === 'link_pagamento') {
-        response += 'Se desejar, já separo o modelo na bancada e te gero o link de Pix com 7% de desconto agora!';
-      } else if (aiConfig.ctaStrategy === 'direcionar_loja_fisica') {
-        response += 'Se quiser ver de pertinho, estamos te esperando na loja do Calhau até às 19h!';
-      } else {
-        response += 'Qualquer detalhe extra, só me chamar que te atendo com todo prazer!';
-      }
-
-      // Aplicar emojis
-      if (aiConfig.emojiIntensity === 'none') {
-        response = response.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
-      } else if (aiConfig.emojiIntensity === 'moderate') {
-        response += ' ✈️✨';
-      } else {
-        response += ' ✈️🧳🔥💃💖';
-      }
-
+      if (aiConfig.slangType === 'regional_slz') response += 'Mermã, é garantia! ';
+      else if (aiConfig.slangType === 'descontraido') response += 'É sucesso garantido! ';
+      if (aiConfig.ctaStrategy === 'grupo_vip_whatsapp') response += 'Posso te enviar o link do nosso Grupo VIP com cupom exclusivo?';
+      else if (aiConfig.ctaStrategy === 'link_pagamento') response += 'Posso gerar o link Pix com 7% de desconto agora!';
+      else if (aiConfig.ctaStrategy === 'direcionar_loja_fisica') response += 'Estamos te esperando no Calhau!';
+      if (aiConfig.emojiIntensity === 'moderate') response += ' ✈️✨';
+      else if (aiConfig.emojiIntensity === 'expressive') response += ' ✈️🧳🔥💃💖';
       setSimulationResponse(response);
-      setIsSimulating(false);
-    }, 600);
+    }
+
+    setIsSimulating(false);
+  };
+
+  const handleResetHistory = () => {
+    setChatHistory([]);
+    setSimulationResponse('');
+    setLastMeta(null);
+    setSimulationError(null);
   };
 
   const handleCreateQuickReply = (e: React.FormEvent) => {
@@ -309,21 +317,56 @@ export const AILanguageView: React.FC = () => {
                 <Zap className="w-4 h-4 text-brand-500" />
                 <h3 className="text-xs font-bold text-gray-900">Simulador da IA em Tempo Real</h3>
               </div>
-              <span className="text-[10px] bg-brand-50 text-brand-600 px-2 py-0.5 rounded-full font-bold">
-                Teste Imediato
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200">
+                  OpenAI Conectada
+                </span>
+                {chatHistory.length > 0 && (
+                  <button onClick={handleResetHistory} className="text-[10px] text-gray-400 hover:text-red-500 transition-colors">
+                    Limpar histórico
+                  </button>
+                )}
+              </div>
             </div>
 
             <p className="text-xs text-gray-500 mt-2">
-              Teste agora como a IA responderá aos clientes com as configurações que você escolheu ao lado:
+              Teste como a IA responderá com as configurações ao lado. Você pode continuar conversando (multi-turno).
             </p>
+
+            {/* Aviso de erro (backend offline) */}
+            {simulationError && (
+              <div className="mt-2 flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{simulationError}</span>
+              </div>
+            )}
+
+            {/* Histórico de conversa */}
+            {chatHistory.length > 0 && (
+              <div className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-1">
+                {chatHistory.map((entry, i) => (
+                  <div key={i} className={`flex ${entry.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`text-[11px] px-3 py-1.5 rounded-xl max-w-[85%] ${
+                      entry.role === 'user'
+                        ? 'bg-brand-500 text-white'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {entry.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Caixa de Entrada do Cliente */}
             <div className="mt-3">
-              <label className="text-[11px] font-semibold text-gray-600">Pergunta do Cliente:</label>
+              <label className="text-[11px] font-semibold text-gray-600">
+                {chatHistory.length > 0 ? 'Próxima mensagem do cliente:' : 'Pergunta do cliente:'}
+              </label>
               <textarea
                 value={simulationInput}
                 onChange={(e) => setSimulationInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSimulate(); } }}
                 rows={2}
                 className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-brand-500"
               />
@@ -331,30 +374,40 @@ export const AILanguageView: React.FC = () => {
 
             <button
               onClick={handleSimulate}
-              disabled={isSimulating}
-              className="mt-2 w-full py-2 px-4 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 shadow-xs"
+              disabled={isSimulating || !simulationInput.trim()}
+              className="mt-2 w-full py-2 px-4 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
-              {isSimulating ? 'Gerando resposta...' : 'Simular Resposta da IA'}
+              {isSimulating ? 'Gerando resposta via OpenAI...' : 'Simular Resposta da IA'}
             </button>
 
             {/* Prévia da Resposta da IA */}
-            <div className="mt-4 p-3.5 rounded-xl bg-[#FAF8F5] border border-gray-200">
-              <div className="flex items-center gap-2 text-[11px] font-bold text-brand-600 mb-1.5">
-                <Bot className="w-4 h-4" />
-                <span>Resposta Gerada pela IA:</span>
-              </div>
+            {(simulationResponse || (!isSimulating && chatHistory.length === 0)) && (
+              <div className="mt-4 p-3.5 rounded-xl bg-[#FAF8F5] border border-gray-200">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-brand-600">
+                    <Bot className="w-4 h-4" />
+                    <span>Resposta da IA:</span>
+                  </div>
+                  {lastMeta && (
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                      <Cpu className="w-3 h-3" />
+                      <span>{lastMeta.model} · {lastMeta.tokens} tokens · {lastMeta.latencyMs}ms</span>
+                    </div>
+                  )}
+                </div>
 
-              {simulationResponse ? (
-                <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
-                  {simulationResponse}
-                </p>
-              ) : (
-                <p className="text-xs text-gray-400 italic">
-                  Clique no botão acima para ver como a IA responderá na prática.
-                </p>
-              )}
-            </div>
+                {simulationResponse ? (
+                  <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
+                    {simulationResponse}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">
+                    Clique no botão acima para ver como a IA responderá na prática.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Base de Conhecimento Aprendida */}
             <div className="mt-4 pt-3 border-t border-gray-100">

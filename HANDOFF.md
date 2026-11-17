@@ -43,6 +43,11 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - Proxy Vite configurado (`/api → localhost:3001`) para desenvolvimento local sem CORS.
   - `tsconfig.server.json` dedicado ao backend; ambos passam `tsc --noEmit` sem erros.
   - `npm run server` sobe o Express local (porta 3001).
+- [x] **Fase 5 - Integração OpenAI (GPT-4o-mini)**:
+  - `server/services/openai.ts`: system prompt dinâmico construído a partir de AIConfig + produtos + quickReplies + RAG.
+  - Rota `POST /api/ai/generate` com multi-turno, registra DevLog automático (tokens, latência, modelo).
+  - Playground da IA (`AILanguageView`) renovado: respostas reais do GPT-4o-mini, bolhas multi-turno, metadados (tokens/latência), fallback resiliente com aviso se backend offline.
+  - Modelo configurável via `OPENAI_MODEL` no `.env` (padrão: `gpt-4o-mini`).
 
 ---
 
@@ -62,3 +67,4 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/02-catalogo-de-produtos-e-estoque.md`](./docs/features/02-catalogo-de-produtos-e-estoque.md) (Catálogo de produtos, estoque com fotos e integração com chat).
 - [`docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md`](./docs/features/03-modelagem-banco-de-dados-postgresql-prisma.md) (Modelagem completa do PostgreSQL no Supabase com Prisma ORM e Seed).
 - [`docs/features/04-camada-api-backend-express-hibrido.md`](./docs/features/04-camada-api-backend-express-hibrido.md) (Backend Express híbrido com CRUD de Produtos e Store, fallback resiliente e adaptador Vercel Serverless).
+- [`docs/features/05-integracao-openai-playground.md`](./docs/features/05-integracao-openai-playground.md) (Integração OpenAI GPT-4o-mini com system prompt dinâmico, multi-turno e DevLog automático no Playground da IA).

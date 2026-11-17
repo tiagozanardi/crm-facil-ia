@@ -2,6 +2,18 @@ import { Product, StoreSettings } from '../types';
 
 const API_BASE = '/api';
 
+export interface ChatHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AIGenerateResult {
+  response: string;
+  model: string;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
 export const apiService = {
   // Health check
   async checkHealth(): Promise<{ status: string; database?: string } | null> {
@@ -100,6 +112,29 @@ export const apiService = {
       if (!res.ok) return null;
       return await res.json();
     } catch {
+      return null;
+    }
+  },
+
+  // IA: Geração de resposta via OpenAI
+  async generateAIResponse(
+    message: string,
+    conversationHistory: ChatHistoryEntry[] = [],
+  ): Promise<AIGenerateResult | null> {
+    try {
+      const res = await fetch(`${API_BASE}/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, conversationHistory }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Erro da API de IA:', err);
+        return null;
+      }
+      return await res.json();
+    } catch (error) {
+      console.warn('Backend de IA offline ou inacessível:', error);
       return null;
     }
   },
