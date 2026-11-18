@@ -10,6 +10,7 @@ import { aiConfigRouter } from './routes/aiConfig';
 import { knowledgeRouter } from './routes/knowledge';
 import { quickRepliesRouter } from './routes/quickReplies';
 import { devLogsRouter } from './routes/devLogs';
+import { whatsappRouter } from './routes/whatsapp';
 
 export const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/ai-config', aiConfigRouter);
 app.use('/api/knowledge', knowledgeRouter);
 app.use('/api/quick-replies', quickRepliesRouter);
 app.use('/api/dev-logs', devLogsRouter);
+app.use('/api/whatsapp', whatsappRouter);
 
 // Fallback para rota não encontrada
 app.use((_req, res) => {

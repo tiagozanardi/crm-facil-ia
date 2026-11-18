@@ -17,7 +17,7 @@
 | Schema Onda 1 | ✅ migrations `0_init` + `20261118153000_whatsapp_onda1` aplicadas |
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
-| Código da integração | 🟡 **S1 concluído** (`server/services/evolution.ts`); S2–S5 pendentes |
+| Código da integração | 🟡 **S1 e S2 concluídos** (cliente + rotas `/api/whatsapp`); S3–S5 pendentes |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
 `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL`.
@@ -80,12 +80,42 @@ descartável (`tmp/check-evolution-client.ts`, gitignored) **11/11** contra `htt
 timeout do `sendText` e limpeza). **Nenhuma escrita no banco do CRM** nessa validação: o `DevLog` não foi
 exercitado porque exige `storeId` (fica para o S2, quando a rota real chamar o cliente).
 
-### S2 — Rotas `/api/whatsapp` (`server/routes/whatsapp.ts`) + registro em `server/app.ts`
-- `GET /api/whatsapp/instance` → status, número, QR em cache, `lastSeenAt`.
-- `POST /api/whatsapp/instance` → cria (idempotente) `crm-<store.slug>`, configura webhook e salva em `WhatsAppInstance`.
-- `POST /api/whatsapp/instance/connect` → QR novo (atualiza cache).
-- `POST /api/whatsapp/instance/logout` / `restart`.
-- Nada de chave no frontend; QR sempre por proxy.
+### S2 — Rotas `/api/whatsapp` (`server/routes/whatsapp.ts`) — ✅ **concluído em 2026-11-18**
+
+Registradas em `server/app.ts` (`app.use('/api/whatsapp', whatsappRouter)`). Toda chamada ao cliente passa
+`{ storeId, source: 'Conexão WhatsApp' }`, então o `DevLog` `EVOLUTION_API` é gravado de verdade.
+
+| Método | Rota | Comportamento |
+|---|---|---|
+| `GET` | `/api/whatsapp/instance` | Lê do banco (status, número, QR em cache, `lastSeenAt`) + diagnóstico sem segredo (`hasApiKey`, `webhookUrl`, `webhookWarning`) |
+| `GET` | `/api/whatsapp/instance?refresh=1` | Consulta `fetchInstances`, atualiza status/número/`lastSeenAt`; se a Evolution não responder, devolve o cache com `stale: true` e `refreshError` |
+| `POST` | `/api/whatsapp/instance` | Cria (idempotente) `crm-malas-slz`, configura o webhook e faz upsert; **201** na criação e **200** quando já existia (`action` = `created` ou `existing`) |
+| `POST` | `/api/whatsapp/instance/connect` | QR novo; **409** `INSTANCE_NOT_CREATED` sem instância e **409** `INSTANCE_MISSING` se a instância sumiu na Evolution |
+| `POST` | `/api/whatsapp/instance/logout` | Desconecta, limpa QR/número, status `DISCONNECTED` (404 da Evolution é tolerado: o objetivo já está cumprido) |
+| `POST` | `/api/whatsapp/instance/restart` | Reinicia a sessão, status `CONNECTING`, limpa o QR |
+
+**Decisões tomadas**
+
+- Nome da instância = `<EVOLUTION_INSTANCE_PREFIX>-<slug da loja>` → hoje `crm-malas-slz`.
+- **`EVOLUTION_ENABLED` não bloqueia estas rotas**: conectar o número é pré-requisito para ligar o envio
+  depois; a flag só vale para envio (S4). Assim dá para conectar o QR com o envio ainda desligado.
+- QR sempre por proxy (`data:image/png;base64,...`); a chave nunca vai ao frontend. O `hash` devolvido
+  pelo `create` (apikey da instância) **não** é gravado para não espalhar segredo no banco.
+- Webhook = `<APP_PUBLIC_URL>/api/webhooks/evolution`, com `x-evolution-webhook-secret` nos `headers`.
+  Sem `APP_PUBLIC_URL` a instância é criada mas o webhook **não** é configurado — a resposta traz
+  `webhookWarning` explicando o que falta.
+- Falhas do pooler do Supabase (`P1001/P1002/P1017/P2024`) viram **503 `DATABASE_UNAVAILABLE`** em vez
+  de 500 (aconteceu no primeiro teste real).
+
+**Validação real (2026-11-18)**: `GET`, `POST` create (idempotente nos dois sentidos), `connect`, `logout`,
+`restart` e `?refresh=1` testados contra a Evolution v2.3.7 + Supabase. A linha `whatsapp_instances` foi
+criada (`crm-malas-slz`, `CONNECTING`, QR de ~13 KB em cache) e **7 `DevLog` `EVOLUTION_API`** (INFO,
+latência 170–5.827 ms) apareceram na Área Dev. Webhook conferido na Evolution: `enabled=true`, 4 eventos,
+cabeçalho secreto presente.
+
+**Pegadinha**: o primeiro `POST /api/whatsapp/instance` criou a instância na Evolution e **falhou ao gravar
+no Supabase** (`P1001`, pooler). O retry caiu no caminho idempotente e gravou a linha — estado parcial é
+recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/connect`.
 
 ### S3 — Webhook `server/routes/webhooks.ts`
 - `POST /api/webhooks/evolution`, público, com header secreto (`EVOLUTION_WEBHOOK_SECRET`, comparação timing-safe).
@@ -149,12 +179,20 @@ exercitado porque exige `storeId` (fica para o S2, quando a rota real chamar o c
 
 ## 6. O que falta de input humano
 
-1. **URL pública do CRM na Vercel** (ex.: `https://crm-facil-ia.vercel.app`) → `APP_PUBLIC_URL` e webhook.
-   Se ainda não estiver deployado, testar local com `cloudflared` e trocar depois.
+1. **URL pública do CRM na Vercel** — ✅ informada em 2026-11-18: `https://crm-facil-ia.vercel.app`
+   (frontend responde 200). **Porém a API serverless está quebrada lá**: `/api/health` devolve
+   `500 FUNCTION_INVOCATION_FAILED`, provavelmente por variáveis de ambiente ausentes no projeto.
+   Enquanto isso não for corrigido + redeploy, o webhook da Evolution (que já aponta para
+   `https://crm-facil-ia.vercel.app/api/webhooks/evolution`) **não entrega nada**.
 2. **D3**: IA automática (recomendado: começar com `autoReplyEnabled=false` e ligar após o checklist).
 3. **D2**: chip dedicado comprado/ativado (necessário só no QR).
-4. Variáveis na Vercel: `EVOLUTION_ENABLED`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`,
-   `EVOLUTION_WEBHOOK_SECRET`, `EVOLUTION_INSTANCE_PREFIX`, `APP_PUBLIC_URL`, `API_AUTH_TOKEN`.
+4. Variáveis na Vercel (todas as da Onda 1): `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY`,
+   `OPENAI_MODEL`, `EVOLUTION_ENABLED`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`,
+   `EVOLUTION_WEBHOOK_SECRET`, `EVOLUTION_INSTANCE_PREFIX`, `APP_PUBLIC_URL`, `EVOLUTION_TIMEOUT_MS`
+   e `API_AUTH_TOKEN` (Onda 3). O `EVOLUTION_WEBHOOK_SECRET` precisa ser **o mesmo** do `.env` local,
+   senão o webhook do S3 rejeita os eventos.
+5. **Rotacionar a `EVOLUTION_API_KEY`** (opcional, recomendado): o valor apareceu num print de terminal
+   durante a sessão do S2, e a chave é global (dá acesso a todas as instâncias da VM).
 
 ---
 
@@ -173,7 +211,9 @@ exercitado porque exige `storeId` (fica para o S2, quando a rota real chamar o c
 ## 8. Prompt sugerido para o novo chat
 
 > Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md` e
-> `docs/features/11-onda-1-implementacao.md`. Continue a Fase 11 pela **Onda 1**, começando pelo
-> **S1 (`server/services/evolution.ts`)**, sem alterar o schema (não há migration prevista).
-> Use permissão ampliada para Prisma/build/push e me mostre o diff antes de qualquer mudança no banco.
-> A URL da Vercel ainda não foi informada; implemente com `APP_PUBLIC_URL` e me pergunte no S3.
+> `docs/features/11-onda-1-implementacao.md`. Continue a Onda 1 pelo **S3 (webhook
+> `POST /api/webhooks/evolution`)**, sem alterar o schema (a tabela e os campos já existem).
+> `APP_PUBLIC_URL` já definida: `https://crm-facil-ia.vercel.app` — mas a API na Vercel está
+> devolvendo `500 FUNCTION_INVOCATION_FAILED`; conferir as variáveis de ambiente antes de testar o
+> webhook de ponta a ponta. Use permissão ampliada para Prisma/build/push e me mostre o diff antes de
+> qualquer mudança no banco.
