@@ -180,10 +180,12 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 ## 6. O que falta de input humano
 
 1. **URL pública do CRM na Vercel** — ✅ informada em 2026-11-18: `https://crm-facil-ia.vercel.app`
-   (frontend responde 200). **Porém a API serverless está quebrada lá**: `/api/health` devolve
-   `500 FUNCTION_INVOCATION_FAILED`, provavelmente por variáveis de ambiente ausentes no projeto.
-   Enquanto isso não for corrigido + redeploy, o webhook da Evolution (que já aponta para
-   `https://crm-facil-ia.vercel.app/api/webhooks/evolution`) **não entrega nada**.
+   (frontend responde 200). **Causa do 500 encontrada**: o projeto estava com **zero variáveis de
+   ambiente** ("No Environment Variables Added") e, como `new PrismaClient()` roda no import de
+   `server/app.ts`, todas as rotas `/api/*` morriam com `FUNCTION_INVOCATION_FAILED`. As 11 variáveis
+   foram cadastradas em Production (bloco pronto em `tmp/vercel-env.txt`, gitignored) e falta o
+   **Redeploy** — env nova não entra em deployment existente. Enquanto isso, o webhook da Evolution
+   (que já aponta para `.../api/webhooks/evolution`) não entrega nada.
 2. **D3**: IA automática (recomendado: começar com `autoReplyEnabled=false` e ligar após o checklist).
 3. **D2**: chip dedicado comprado/ativado (necessário só no QR).
 4. Variáveis na Vercel (todas as da Onda 1): `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY`,
