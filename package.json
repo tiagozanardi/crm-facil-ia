@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "tsx server/index.ts",
+    "postinstall": "prisma generate",
     "seed:leads": "tsx prisma/seed-leads.ts",
     "seed:quick-replies": "tsx prisma/seed-quick-replies.ts",
     "backfill:phones": "tsx prisma/backfill-phone-e164.ts",
