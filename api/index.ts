@@ -39,7 +39,10 @@ async function loadApp(): Promise<ExpressApp | null> {
   bootAttempted = true;
 
   try {
-    const mod = await import('../server/app');
+    // Extensão `.js` é obrigatória: a função é emitida como ESM (por causa do `type: module`
+    // do package.json) e ESM não resolve import sem extensão. O TypeScript mapeia `.js` → `.ts`
+    // na checagem de tipos; na Vercel o arquivo compilado (`server/app.js`) já existe.
+    const mod = await import('../server/app.js');
     app = (mod as unknown as { app: ExpressApp }).app;
   } catch (error) {
     const err = error as Error & { code?: string };
