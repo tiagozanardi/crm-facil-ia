@@ -8,6 +8,7 @@ import { leadsRouter } from './routes/leads';
 import { conversationsRouter } from './routes/conversations';
 import { aiConfigRouter } from './routes/aiConfig';
 import { knowledgeRouter } from './routes/knowledge';
+import { quickRepliesRouter } from './routes/quickReplies';
 
 export const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api/leads', leadsRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/ai-config', aiConfigRouter);
 app.use('/api/knowledge', knowledgeRouter);
+app.use('/api/quick-replies', quickRepliesRouter);
 
 // Fallback para rota não encontrada
 app.use((_req, res) => {

@@ -60,6 +60,10 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - Tom, emojis, gírias, CTA, limite de palavras e horários agora são salvos no PostgreSQL; o prompt lê do banco em toda geração (validado: mudar para "vendedor/expressivo" alterou a resposta real).
   - "Ensinar IA com esta resposta" grava em `AIKnowledge` com `source = HUMANO_CHAT`; a lista na tela "Linguagem da IA" vem do banco e permite excluir ensinamentos.
   - Atualização otimista com aviso quando o banco não aceita (backend offline).
+- [x] **Fase 8 - Respostas Rápidas Persistidas**:
+  - `server/routes/quickReplies.ts` (`GET/POST/DELETE /api/quick-replies`) com atalho único por loja (409 explicando o conflito), normalização do atalho e categoria validada.
+  - Lista do chat e da tela "Linguagem da IA" agora vêm do banco; formulário ganhou seletor de categoria e a lista permite excluir (otimista com rollback em caso de erro).
+  - `prisma/seed-quick-replies.ts` (`npm run seed:quick-replies`): seed idempotente que adicionou o atalho `/grupovip` — loja com 5 respostas rápidas.
 
 ---
 
@@ -72,7 +76,8 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
    ```
    Acesse: `http://localhost:5555` para ver todas as tabelas e dados da Malas SLZ.
 4. **Popular os leads de demonstração (idempotente, não apaga nada)**: `npm run seed:leads`
-5. **Chave da OpenAI**: coloque `OPENAI_API_KEY="sk-..."` no `.env` (arquivo gitignored). Sem ela, o Playground e o botão "Responder com IA" exibem aviso amigável em vez de quebrar.
+5. **Popular as respostas rápidas (idempotente)**: `npm run seed:quick-replies`
+6. **Chave da OpenAI**: coloque `OPENAI_API_KEY="sk-..."` no `.env` (arquivo gitignored). Sem ela, o Playground e o botão "Responder com IA" exibem aviso amigável em vez de quebrar.
 
 ---
 
@@ -99,6 +104,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/05-integracao-openai-playground.md`](./docs/features/05-integracao-openai-playground.md) (Integração OpenAI GPT-4o-mini com system prompt dinâmico, multi-turno e DevLog automático no Playground da IA).
 - [`docs/features/06-ia-no-chat-e-rotas-leads-conversas.md`](./docs/features/06-ia-no-chat-e-rotas-leads-conversas.md) (IA no Chat com histórico real, persistência de leads/conversas, pausa de intervenção humana e seed idempotente de leads).
 - [`docs/features/07-persistencia-aiconfig-e-conhecimento.md`](./docs/features/07-persistencia-aiconfig-e-conhecimento.md) (Configuração da linguagem da IA e base de conhecimento/RAG persistidas no PostgreSQL, com validação e exclusão de ensinamentos).
+- [`docs/features/08-respostas-rapidas-persistidas.md`](./docs/features/08-respostas-rapidas-persistidas.md) (Respostas rápidas no PostgreSQL com atalho único, categoria validada, exclusão na tela e seed idempotente).
 
 ---
 
@@ -113,4 +119,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 5. **Banco populado**: 5 leads, 5 conversas, 15 mensagens (Supabase), mantendo os DevLogs reais.
 6. **Validação com a chave real da OpenAI** (`.env` local, não versionado): Playground 200 / 1403 tokens / 3746ms e Chat 201 / 1392 tokens / 2328ms, com `DevLog` gravado. Mensagens de teste removidas do banco após a validação.
 7. **Fase 7 publicada**: configuração da IA e base de conhecimento persistidas (`/api/ai-config`, `/api/knowledge`), com validação de payload, exclusão de ensinamentos e efeito real no prompt confirmado (tom "vendedor/expressivo" mudou a resposta da OpenAI).
-8. **Pendências para a próxima rodada**: persistir quickReplies, hidratar a Área Dev com `DevLog` real, editar conhecimento existente, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.
+8. **Fase 8 publicada**: respostas rápidas no PostgreSQL (`/api/quick-replies`), atalho único (409), categoria validada, seletor de categoria + lista com exclusão na tela, seed idempotente (`/grupovip`) — 5 atalhos ativos.
+9. **Pendências para a próxima rodada**: hidratar a Área Dev com `DevLog` real, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.

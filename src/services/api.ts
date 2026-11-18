@@ -7,6 +7,7 @@ import {
   LeadStage,
   AIConfig,
   AIKnowledgeItem,
+  QuickReply,
 } from '../types';
 
 const API_BASE = '/api';
@@ -358,6 +359,38 @@ export const apiService = {
   async deleteKnowledge(id: string): Promise<boolean> {
     try {
       const res = await fetch(`${API_BASE}/knowledge/${id}`, { method: 'DELETE' });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  // ----------------------------------------------------------------
+  // Respostas Rápidas
+  // ----------------------------------------------------------------
+  async getQuickReplies(): Promise<QuickReply[] | null> {
+    try {
+      const res = await fetch(`${API_BASE}/quick-replies`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async createQuickReply(reply: Omit<QuickReply, 'id'>): Promise<QuickReply> {
+    const res = await fetch(`${API_BASE}/quick-replies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reply),
+    });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  async deleteQuickReply(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/quick-replies/${id}`, { method: 'DELETE' });
       return res.ok;
     } catch {
       return false;

@@ -27,6 +27,7 @@ export const AILanguageView: React.FC = () => {
     updateAIConfig, 
     quickReplies, 
     addQuickReply,
+    removeQuickReply,
     aiKnowledge,
     removeKnowledge,
     storeSettings
@@ -44,6 +45,7 @@ export const AILanguageView: React.FC = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newShortcut, setNewShortcut] = useState('');
   const [newContent, setNewContent] = useState('');
+  const [newCategory, setNewCategory] = useState<QuickReply['category']>('geral');
 
   const handleSimulate = async () => {
     if (!simulationInput.trim()) return;
@@ -104,13 +106,14 @@ export const AILanguageView: React.FC = () => {
     addQuickReply({
       title: newTitle,
       shortcut: newShortcut.startsWith('/') ? newShortcut : `/${newShortcut || 'atalho'}`,
-      category: 'precos',
+      category: newCategory,
       content: newContent
     });
 
     setNewTitle('');
     setNewShortcut('');
     setNewContent('');
+    setNewCategory('geral');
   };
 
   return (
@@ -273,7 +276,7 @@ export const AILanguageView: React.FC = () => {
             </h3>
 
             <form onSubmit={handleCreateQuickReply} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <input
                   type="text"
                   placeholder="Título (ex: Chave Pix da Loja)"
@@ -288,6 +291,19 @@ export const AILanguageView: React.FC = () => {
                   onChange={(e) => setNewShortcut(e.target.value)}
                   className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                 />
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value as QuickReply['category'])}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700"
+                  title="Categoria usada para organizar as respostas no chat"
+                >
+                  <option value="geral">Geral</option>
+                  <option value="medidas">Medidas</option>
+                  <option value="precos">Preços</option>
+                  <option value="envio">Envio</option>
+                  <option value="garantia">Garantia</option>
+                  <option value="pagamento">Pagamento</option>
+                </select>
               </div>
 
               <textarea
@@ -307,6 +323,42 @@ export const AILanguageView: React.FC = () => {
                 Salvar Resposta Rápida
               </button>
             </form>
+
+            {/* Lista das respostas rápidas salvas no banco */}
+            <div className="pt-3 mt-1 border-t border-gray-100">
+              <div className="text-[11px] font-bold text-gray-700 flex items-center justify-between mb-2">
+                <span>Respostas Rápidas Cadastradas ({quickReplies.length})</span>
+                <span className="text-[9px] text-emerald-600 font-semibold">Salvas no banco</span>
+              </div>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {quickReplies.map((qr) => (
+                  <div key={qr.id} className="p-2.5 rounded-lg border border-gray-100 bg-gray-50 text-[11px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-800 truncate">{qr.title}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
+                          {qr.shortcut}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeQuickReply(qr.id)}
+                          className="p-0.5 rounded text-gray-300 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          title="Remover esta resposta rápida"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-gray-500 mt-1 line-clamp-2">{qr.content}</p>
+                  </div>
+                ))}
+                {quickReplies.length === 0 && (
+                  <p className="text-[11px] text-gray-400 italic">
+                    Nenhuma resposta rápida cadastrada ainda.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
         </div>

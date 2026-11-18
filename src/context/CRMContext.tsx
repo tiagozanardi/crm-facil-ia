@@ -67,6 +67,7 @@ interface CRMContextType {
   teachAIFromMessage: (text: string, referenceQuestion?: string) => void;
   quickReplies: QuickReply[];
   addQuickReply: (reply: Omit<QuickReply, 'id'>) => void;
+  removeQuickReply: (id: string) => void;
   aiConfig: AIConfig;
   updateAIConfig: (config: Partial<AIConfig>) => void;
   aiKnowledge: AIKnowledgeItem[];
@@ -118,6 +119,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           backendConversations,
           backendAIConfig,
           backendKnowledge,
+          backendQuickReplies,
         ] = await Promise.all([
           apiService.getProducts(),
           apiService.getStoreSettings(),
@@ -125,6 +127,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiService.getConversations(),
           apiService.getAIConfig(),
           apiService.getKnowledge(),
+          apiService.getQuickReplies(),
         ]);
 
         if (!isMounted) return;
@@ -153,6 +156,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (backendKnowledge) {
           setAiKnowledge(backendKnowledge);
+        }
+        if (backendQuickReplies && backendQuickReplies.length > 0) {
+          setQuickReplies(backendQuickReplies);
         }
       } catch (err) {
         console.warn('Backend offline ou inacessível. Usando mock inicial:', err);
@@ -392,8 +398,28 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addQuickReply = (reply: Omit<QuickReply, 'id'>) => {
-    setQuickReplies(prev => [...prev, { ...reply, id: `qr-${Date.now()}` }]);
+    const tempId = `qr-${Date.now()}`;
+    setQuickReplies(prev => [...prev, { ...reply, id: tempId }]);
     addNotification('Resposta rápida cadastrada com sucesso!');
+
+    apiService.createQuickReply(reply).then(saved => {
+      setQuickReplies(prev => prev.map(qr => qr.id === tempId ? saved : qr));
+    }).catch((err: any) => {
+      // Falhou (ex.: atalho duplicado): desfaz o item otimista e avisa o lojista.
+      setQuickReplies(prev => prev.filter(qr => qr.id !== tempId));
+      addNotification(`⚠️ ${err?.message || 'Não foi possível salvar a resposta rápida no banco.'}`);
+    });
+  };
+
+  const removeQuickReply = (id: string) => {
+    setQuickReplies(prev => prev.filter(qr => qr.id !== id));
+    apiService.deleteQuickReply(id).then(ok => {
+      if (!ok) {
+        addNotification('⚠️ Não foi possível remover a resposta rápida do banco.');
+      }
+    }).catch(() => {
+      addNotification('⚠️ Não foi possível remover a resposta rápida do banco.');
+    });
   };
 
   const updateAIConfig = (newCfg: Partial<AIConfig>) => {
@@ -488,6 +514,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       teachAIFromMessage,
       quickReplies,
       addQuickReply,
+      removeQuickReply,
       aiConfig,
       updateAIConfig,
       aiKnowledge,

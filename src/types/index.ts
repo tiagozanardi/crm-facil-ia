@@ -74,7 +74,7 @@ export interface QuickReply {
   title: string;
   shortcut: string;
   content: string;
-  category: 'medidas' | 'precos' | 'envio' | 'garantia' | 'pagamento';
+  category: 'medidas' | 'precos' | 'envio' | 'garantia' | 'pagamento' | 'geral';
 }
 
 export interface AIKnowledgeItem {
