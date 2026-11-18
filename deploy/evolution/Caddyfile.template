@@ -5,8 +5,9 @@ __DOMAIN__ {
 
 	# A interface /manager e a documentação não são usadas pelo CRM e ampliam a
 	# superfície de ataque. Para usar o /manager temporariamente, apague este
-	# bloco e reinicie o Caddy (docker compose restart caddy).
-	handle /manager* /docs* /api-docs* {
+	# bloco e reinicie o Caddy (sudo docker compose restart caddy).
+	@blocked path /manager* /docs* /api-docs*
+	handle @blocked {
 		respond 404
 	}
 

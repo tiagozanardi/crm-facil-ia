@@ -225,7 +225,7 @@ Também verifico por dentro da VM (você cola, se necessário):
 
 ```bash
 cd /opt/evolution
-docker compose ps          # 3 serviços "running" (postgres "healthy")
+sudo docker compose ps     # 3 serviços "running" (postgres "healthy")
 free -h                    # swap de 2 GB disponível
 df -h /                    # disco com folga
 ```
@@ -270,15 +270,19 @@ Depois da Onda 1 no ar:
 
 ## 10. Operação do dia a dia
 
+> **Todo comando `docker compose` precisa de `sudo`** nesta stack: o `/opt/evolution/.env` é `600` e
+> pertence ao root (contém a senha do Postgres e a API key). Sem `sudo` o Compose falha com
+> `permission denied` ao ler o `.env`.
+
 ```bash
 cd /opt/evolution
 
-docker compose ps                       # status
-docker compose logs -f --tail=100 evolution-api   # logs ao vivo
-docker compose restart evolution-api    # reiniciar sem perder sessão
-docker compose pull && docker compose up -d       # atualizar (mude a tag antes, de propósito)
-docker system df                        # espaço usado por imagens/volumes
-docker image prune -f                   # limpar imagens antigas
+sudo docker compose ps                       # status
+sudo docker compose logs -f --tail=100 evolution-api   # logs ao vivo
+sudo docker compose restart evolution-api    # reiniciar sem perder sessão
+sudo docker compose pull && sudo docker compose up -d  # atualizar (mude a tag antes, de propósito)
+docker system df                             # espaço usado por imagens/volumes
+docker image prune -f                        # limpar imagens antigas
 ```
 
 **Backup:** roda sozinho às 03:30 em `/var/backups/evolution` (7 dias).
@@ -286,16 +290,16 @@ Restaurar (com a Evolution parada):
 
 ```bash
 cd /opt/evolution
-docker compose stop evolution-api
+sudo docker compose stop evolution-api
 docker exec -i evolution_postgres pg_restore -U evolution -d evolution --clean --if-exists < /var/backups/evolution/ARQUIVO.dump
-docker compose start evolution-api
+sudo docker compose start evolution-api
 ```
 
 **Monitoramento grátis:** crie um monitor HTTP no [UptimeRobot](https://uptimerobot.com) para
 `https://crm-evo-malas.duckdns.org/` a cada 5 min, com alerta por e-mail. Ele avisa se a VM cair.
 
 **Trocar a senha do Postgres:** não faça no `.env` sem recriar o volume — o Postgres guarda a senha
-antiga. O caminho seguro é `docker compose down`, editar `.env` e subir de novo só se o volume for novo.
+antiga. O caminho seguro é `sudo docker compose down`, editar `.env` e subir de novo só se o volume for novo.
 
 ---
 

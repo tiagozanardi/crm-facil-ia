@@ -156,7 +156,7 @@ else
   printf ' Status.....: \033[1;33mAINDA NÃO RESPONDEU\033[0m — rode: docker compose logs -f evolution-api\n'
 fi
 printf '\n Próximos comandos:\n'
-printf '   cd %s && docker compose ps\n' "$APP_DIR"
+printf '   cd %s && sudo docker compose ps\n' "$APP_DIR"
 printf '   curl -s -H "apikey: %s" https://%s/instance/fetchInstances\n' "$API_KEY" "$DOMAIN"
 printf '\n Backup diário às 03:30 em /var/backups/evolution (retenção de 7 dias).\n'
 printf ' Guarde a API key no gerenciador de senhas e no .env do CRM (nunca no Git).\n\n'
