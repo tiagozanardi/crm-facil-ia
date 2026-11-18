@@ -179,13 +179,17 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 
 ## 6. O que falta de input humano
 
-1. **URL pública do CRM na Vercel** — ✅ informada em 2026-11-18: `https://crm-facil-ia.vercel.app`
-   (frontend responde 200). **Causa do 500 encontrada**: o projeto estava com **zero variáveis de
-   ambiente** ("No Environment Variables Added") e, como `new PrismaClient()` roda no import de
-   `server/app.ts`, todas as rotas `/api/*` morriam com `FUNCTION_INVOCATION_FAILED`. As 11 variáveis
-   foram cadastradas em Production (bloco pronto em `tmp/vercel-env.txt`, gitignored) e falta o
-   **Redeploy** — env nova não entra em deployment existente. Enquanto isso, o webhook da Evolution
-   (que já aponta para `.../api/webhooks/evolution`) não entrega nada.
+1. **URL pública do CRM na Vercel** — ✅ resolvido em 2026-11-18: `https://crm-facil-ia.vercel.app`.
+   Foram **duas** causas para o `500 FUNCTION_INVOCATION_FAILED` em `/api/*`:
+   (a) o projeto estava com **zero variáveis de ambiente** (11 cadastradas em Production; bloco pronto em
+   `tmp/vercel-env.txt`, gitignored) e **redeploy** é obrigatório para a função ver env nova;
+   (b) o `package.json` usa `"type": "module"`, então a função é emitida como **ESM** e **não resolve
+   import relativo sem extensão** — `import '../server/app'` morria com `ERR_MODULE_NOT_FOUND` mesmo com
+   `server/app.js` presente no bundle. Corrigido com `.js` explícito em **45 imports** de `server/**` e no
+   entry (`api/index.ts`), que agora também registra falha de boot no log.
+   **Validado em produção**: `/api/health` → 200 `database: connected`, `/api/whatsapp/instance` → 200 com
+   `crm-malas-slz`. O webhook da Evolution já aponta para `.../api/webhooks/evolution` e começa a
+   funcionar quando o S3 existir.
 2. **D3**: IA automática (recomendado: começar com `autoReplyEnabled=false` e ligar após o checklist).
 3. **D2**: chip dedicado comprado/ativado (necessário só no QR).
 4. Variáveis na Vercel (todas as da Onda 1): `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY`,
