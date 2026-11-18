@@ -93,11 +93,13 @@ atualiza status; se o humano enviou, a pausa de 24h da IA é aplicada (regra já
 ## 4. Escopo em 3 ondas (ordem de execução)
 
 ### 🌊 Onda 1 — Fundação (conectar, receber, enviar) — *fecha o MVP técnico*
-- [ ] Subir a Evolution API v2 (Docker) no host escolhido, com HTTPS, API key forte, cache em memória
+- [x] Subir a Evolution API v2 (Docker) no host escolhido, com HTTPS, API key forte, cache em memória
       (sem Redis) e `DATABASE_SAVE_DATA_INSTANCE=true` (sessão sobrevive a restart/deploy).
-- [ ] `server/services/evolution.ts`: cliente tipado (`createInstance`, `connect`, `connectionState`,
-      `setWebhook`, `sendText`, `restart`, `logout`, `deleteInstance`) com timeout, erros tipados e
-      `DevLog` (INFO em sucesso, ERROR em falha, latência).
+- [x] `server/services/evolution.ts`: cliente tipado (`createInstance`, `connect`, `connectionState`,
+      `setWebhook`/`getWebhook`, `sendText`, `restart`, `logout`, `deleteInstance`, `fetchInstances`,
+      `findInstance`) com timeout, erros tipados e `DevLog` (INFO em sucesso, ERROR em falha, latência).
+      **S1 concluído em 2026-11-18** — detalhes e contratos verificados em
+      [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s1--cliente-serverservicesevolutionts---concluído-em-2026-11-18).
 - [ ] Modelo `WhatsAppInstance` + migration (ver seção 5).
 - [ ] `POST /api/whatsapp/instance` (cria instância + configura webhook), `GET /api/whatsapp/instance`
       (status + QR), `POST /api/whatsapp/instance/reconnect|logout|restart`.
