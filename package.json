@@ -8,6 +8,7 @@
     "server": "tsx server/index.ts",
     "seed:leads": "tsx prisma/seed-leads.ts",
     "seed:quick-replies": "tsx prisma/seed-quick-replies.ts",
+    "backfill:phones": "tsx prisma/backfill-phone-e164.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000"
   },
