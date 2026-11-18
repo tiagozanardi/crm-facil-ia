@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { MessageSender } from '@prisma/client';
-import { prisma } from '../db';
-import { getDefaultStore } from '../helpers/tenant';
+import { prisma } from '../db.js';
+import { getDefaultStore } from '../helpers/tenant.js';
 import {
   formatMessage,
   formatPausedUntil,
@@ -10,17 +10,17 @@ import {
   toClientSender,
   toClientStage,
   toPrismaSender,
-} from '../helpers/mappers';
+} from '../helpers/mappers.js';
 import {
   ensureConversationForLead,
   pauseAIForLead,
   resumeExpiredPauses,
-} from '../services/leadState';
+} from '../services/leadState.js';
 import {
   assertApiKeyConfigured,
   generateAIReply,
   MissingApiKeyError,
-} from '../services/ai';
+} from '../services/ai.js';
 
 export const conversationsRouter = Router();
 

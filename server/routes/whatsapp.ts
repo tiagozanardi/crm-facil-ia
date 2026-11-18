@@ -19,8 +19,8 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import { WhatsAppStatus, type Store, type WhatsAppInstance } from '@prisma/client';
-import { prisma } from '../db';
-import { getDefaultStore } from '../helpers/tenant';
+import { prisma } from '../db.js';
+import { getDefaultStore } from '../helpers/tenant.js';
 import {
   EvolutionError,
   connect,
@@ -30,7 +30,7 @@ import {
   logout,
   restart,
   setWebhook,
-} from '../services/evolution';
+} from '../services/evolution.js';
 
 export const whatsappRouter = Router();
 

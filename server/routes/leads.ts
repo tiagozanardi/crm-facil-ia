@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { prisma } from '../db';
-import { getDefaultStore } from '../helpers/tenant';
-import { formatLead, toClientStage, toPrismaStage } from '../helpers/mappers';
-import { pauseAIForLead, resumeAIForLead, resumeExpiredPauses } from '../services/leadState';
+import { prisma } from '../db.js';
+import { getDefaultStore } from '../helpers/tenant.js';
+import { formatLead, toClientStage, toPrismaStage } from '../helpers/mappers.js';
+import { pauseAIForLead, resumeAIForLead, resumeExpiredPauses } from '../services/leadState.js';
 
 export const leadsRouter = Router();
 

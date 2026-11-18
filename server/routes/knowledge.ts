@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { KnowledgeSource } from '@prisma/client';
-import { prisma } from '../db';
-import { getDefaultStore } from '../helpers/tenant';
+import { prisma } from '../db.js';
+import { getDefaultStore } from '../helpers/tenant.js';
 
 export const knowledgeRouter = Router();
 

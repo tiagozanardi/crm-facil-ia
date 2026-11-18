@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { LogLevel, ServiceName } from '@prisma/client';
-import { prisma } from '../db';
-import { getDefaultStore } from '../helpers/tenant';
-import { assertApiKeyConfigured, generateDevDiagnosis, MissingApiKeyError } from '../services/ai';
+import { prisma } from '../db.js';
+import { getDefaultStore } from '../helpers/tenant.js';
+import { assertApiKeyConfigured, generateDevDiagnosis, MissingApiKeyError } from '../services/ai.js';
 
 export const devLogsRouter = Router();
 

@@ -3,8 +3,8 @@ import {
   assertApiKeyConfigured,
   generateAIReply,
   MissingApiKeyError,
-} from '../services/ai';
-import { getDefaultStore } from '../helpers/tenant';
+} from '../services/ai.js';
+import { getDefaultStore } from '../helpers/tenant.js';
 
 export const aiRouter = Router();
 

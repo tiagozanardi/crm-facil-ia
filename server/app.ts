@@ -1,16 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import { healthRouter } from './routes/health';
-import { productsRouter } from './routes/products';
-import { storeRouter } from './routes/store';
-import { aiRouter } from './routes/ai';
-import { leadsRouter } from './routes/leads';
-import { conversationsRouter } from './routes/conversations';
-import { aiConfigRouter } from './routes/aiConfig';
-import { knowledgeRouter } from './routes/knowledge';
-import { quickRepliesRouter } from './routes/quickReplies';
-import { devLogsRouter } from './routes/devLogs';
-import { whatsappRouter } from './routes/whatsapp';
+import { healthRouter } from './routes/health.js';
+import { productsRouter } from './routes/products.js';
+import { storeRouter } from './routes/store.js';
+import { aiRouter } from './routes/ai.js';
+import { leadsRouter } from './routes/leads.js';
+import { conversationsRouter } from './routes/conversations.js';
+import { aiConfigRouter } from './routes/aiConfig.js';
+import { knowledgeRouter } from './routes/knowledge.js';
+import { quickRepliesRouter } from './routes/quickReplies.js';
+import { devLogsRouter } from './routes/devLogs.js';
+import { whatsappRouter } from './routes/whatsapp.js';
 
 export const app = express();
 

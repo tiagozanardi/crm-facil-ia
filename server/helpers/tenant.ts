@@ -1,4 +1,4 @@
-import { prisma } from '../db';
+import { prisma } from '../db.js';
 
 export async function getDefaultStore() {
   const store = await prisma.store.findFirst({

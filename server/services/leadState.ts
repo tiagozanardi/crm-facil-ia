@@ -1,5 +1,5 @@
 import { AIStatus, LeadStage } from '@prisma/client';
-import { prisma } from '../db';
+import { prisma } from '../db.js';
 
 /**
  * Pausa a IA de um lead espelhando o estado em Lead e Conversation.

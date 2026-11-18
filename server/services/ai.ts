@@ -1,6 +1,6 @@
 import type OpenAI from 'openai';
-import { prisma } from '../db';
-import { getOpenAIClient, buildSystemPrompt, OPENAI_MODEL } from './openai';
+import { prisma } from '../db.js';
+import { getOpenAIClient, buildSystemPrompt, OPENAI_MODEL } from './openai.js';
 
 export interface ChatHistoryEntry {
   role: 'user' | 'assistant';
