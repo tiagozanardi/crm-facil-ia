@@ -325,6 +325,14 @@ antiga. O caminho seguro é `docker compose down`, editar `.env` e subir de novo
 
 ## 12. Custos e limites do nível gratuito
 
+> **O painel de estimativa do console mostra o preço de tabela, não o nível gratuito.** Ao criar a VM
+> ele exibe ~**US$ 6,11/mês** para 2 vCPU + 1 GB — é exatamente o valor que o Always Free cobre. O custo
+> real fica **R$ 0** desde que: `e2-micro`, região `us-east1`/`us-central1`/`us-west1`, **1 instância por
+> conta de faturamento**, disco **padrão ≤ 30 GB** e egress ≤ 1 GB/mês. Confira em
+> **Faturamento → Relatórios** 24–48 h depois; o alerta de R$ 1 avisa se algo escapar. Desligue a
+> "Programação de snapshots" (Proteção de dados) e não instale o Agente de operações para não gerar
+> custos variáveis.
+
 **Coberto (R$ 0):**
 - 1 × `e2-micro` por mês nas regiões `us-west1`, `us-central1` ou `us-east1`;
 - 30 GB de disco permanente padrão;
