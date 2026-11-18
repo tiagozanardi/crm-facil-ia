@@ -69,6 +69,10 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - Diagnóstico real via GPT-4o-mini com prompt de engenheiro sênior (causa raiz, impacto, severidade, ações), registrando a própria chamada como `DevLog`.
   - `DevAdminView` reescrita: cards com métricas do banco, filtros, busca com debounce, botão de atualizar e painel de diagnóstico com tokens/latência.
   - Intervenção humana no chat agora gera `DevLog` `INFO / CRM_WEBHOOK` (aparece na Área Dev).
+- [x] **Fase 10 - Índices de Performance e Unicidade no Banco**:
+  - 11 estruturas novas no PostgreSQL: índices compostos que casam com as consultas reais (`leads(storeId, stage)`, `messages(conversationId, createdAt)`, `conversations(storeId, lastMessageAt)`, `dev_logs(storeId, createdAt/level)`, entre outros) e **unique `(storeId, shortcut)`** em `quick_replies`.
+  - A unicidade do atalho agora é garantida pelo banco; a API mantém a pré-checagem amigável e converte `P2002` em **409**.
+  - Banco: 26 índices no total (11 PKs + 15 de busca/unicidade). Dicionário atualizado com a seção 5.12 e planos de execução validados com `EXPLAIN`.
 
 ---
 
@@ -111,6 +115,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/07-persistencia-aiconfig-e-conhecimento.md`](./docs/features/07-persistencia-aiconfig-e-conhecimento.md) (Configuração da linguagem da IA e base de conhecimento/RAG persistidas no PostgreSQL, com validação e exclusão de ensinamentos).
 - [`docs/features/08-respostas-rapidas-persistidas.md`](./docs/features/08-respostas-rapidas-persistidas.md) (Respostas rápidas no PostgreSQL com atalho único, categoria validada, exclusão na tela e seed idempotente).
 - [`docs/features/09-area-dev-logs-reais.md`](./docs/features/09-area-dev-logs-reais.md) (Área Dev com logs e métricas reais do PostgreSQL, filtros e diagnóstico de logs por IA).
+- [`docs/features/10-indices-e-unicidade-banco.md`](./docs/features/10-indices-e-unicidade-banco.md) (Índices compostos de performance, unique `(storeId, shortcut)` e tratamento de `P2002` na API).
 
 ---
 
@@ -134,4 +139,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 8. **Fase 8 publicada**: respostas rápidas no PostgreSQL (`/api/quick-replies`), atalho único (409), categoria validada, seletor de categoria + lista com exclusão na tela, seed idempotente (`/grupovip`) — 5 atalhos ativos.
 9. **Fase 9 publicada (2026-11-18)**: Área Dev conectada ao `DevLog` real, resumo de 30 dias (tokens, custo, latência, erros), filtros e diagnóstico de logs por GPT-4o-mini (validado: 485 tokens / 4.120 ms, com log do próprio diagnóstico) + `DevLog` automático de intervenção humana.
 10. **Dicionário do banco (2026-11-18)**: documentação completa em `docs/database/`, extraída do banco real (11 tabelas, 122 colunas, 12 enums, 12 FKs, 15 índices) e com as receitas SQL/Prisma executadas e validadas.
-11. **Pendências para a próxima rodada**: paginação/retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.
+11. **Fase 10 publicada**: 11 novas estruturas de índice (incluindo unique `(storeId, shortcut)`), `db push` aplicado após checar 0 duplicatas, `P2002` tratado como 409 na API, `EXPLAIN` confirmando `Index Scan` e dicionário atualizado (26 índices no total).
+12. **Pendências para a próxima rodada**: adotar `prisma migrate` (hoje só `db push`), retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.

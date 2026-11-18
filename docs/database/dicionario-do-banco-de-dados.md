@@ -2,7 +2,7 @@
 
 > **Público-alvo:** desenvolvedor(a) júnior que acabou de receber acesso ao banco e nunca viu este projeto.
 > **Objetivo:** explicar, tabela por tabela, *o que é*, *para que serve*, *quem escreve/lê* e *as pegadinhas* de cada campo.
-> **Fonte da verdade:** `prisma/schema.prisma` (este documento foi conferido contra o banco real — 11 tabelas, 12 enums, 12 chaves estrangeiras e 15 índices).
+> **Fonte da verdade:** `prisma/schema.prisma` (este documento foi conferido contra o banco real — 11 tabelas, 12 enums, 12 chaves estrangeiras e 26 índices).
 > **Última atualização:** 2026-11-18 · **Banco:** PostgreSQL no Supabase · **ORM:** Prisma 6
 
 ---
@@ -185,7 +185,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Relações:** `store`; `assignedLeads` (leads em que é responsável).
-**Índices:** PK `id`; unique `email`.
+**Índices:** PK `id`; unique `email`; índice `(storeId)` para listar a equipe de uma loja.
 
 ---
 
@@ -214,6 +214,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Relações:** `store` apenas. Não há vínculo produto↔conversa: quando a IA cita um produto, é texto livre.
+**Índices:** PK `id`; índice composto `(storeId, active)` — cobre a listagem da loja e a query da IA (`active = true`).
 **Uso pela IA:** o prompt lista nome, preço, Pix, estoque, cores, medidas e descrição. Produto com `stock = 0` **não** entra no contexto.
 
 ---
@@ -244,6 +245,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Relações:** `store`; `assignedTo` (User); `conversation` (1:1).
+**Índices:** PK `id`; `(storeId, stage)` para o funil/Kanban; `(storeId, lastInteraction)` para a ordenação do pipeline; `(storeId, aiStatus, pausedUntil)` para o "quem está pausado e até quando".
 **Espelhamento importante:** `stage` e `aiStatus`/`pausedUntil` existem também em `conversations` e são mantidos em sincronia pelo backend (`server/services/leadState.ts`). Se você atualizar um, atualize o outro.
 
 ---
@@ -269,7 +271,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Relações:** `store`; `lead` (1:1); `messages` (1:N).
-**Índices:** PK; **unique** em `leadId`.
+**Índices:** PK; **unique** em `leadId` (1:1); `(storeId, lastMessageAt)` para ordenar o inbox da loja.
 
 ---
 
@@ -291,7 +293,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `isLearned` | boolean | — | `false` | Marca que a mensagem virou ensinamento da IA. **Hoje só o seed preenche**; o botão "Ensinar IA" cria o `ai_knowledge` mas ainda não marca a mensagem. |
 | `createdAt` | timestamp | — | `now()` | Ordem cronológica do chat (`orderBy createdAt asc`). |
 
-**Índices:** apenas PK. Consultas por conversa são filtradas por `conversationId` sem índice dedicado (ver 9.8).
+**Índices:** PK `id`; índice composto `(conversationId, createdAt)` — é exatamente o acesso do chat (mensagens de uma conversa em ordem cronológica) e o do histórico da IA.
 
 ---
 
@@ -316,6 +318,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Criação sob demanda:** se a loja não tiver configuração, o `GET /api/ai-config` cria uma com os defaults (`ensureAIConfig`).
+**Índices:** PK `id`; **unique** em `storeId` (garante 1 config por loja).
 
 ---
 
@@ -335,6 +338,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` | timestamp | — | `now()` | Usado para escolher os 20 mais recentes. |
 
 **Limitação atual:** não há embeddings/busca semântica — o prompt recebe os 20 mais recentes (ver 9.9).
+**Índices:** PK `id`; `(storeId, createdAt)` para buscar os ensinamentos mais recentes da loja.
 
 ---
 
@@ -354,7 +358,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `content` | text | — | — | Texto que será inserido no chat. |
 | `createdAt` | timestamp | — | `now()` | Ordem dos chips no chat (mais antigos primeiro). |
 
-**Índices:** apenas PK; a unicidade de `shortcut` é checada em código (risco de corrida, ver 9.10).
+**Índices:** PK; **unique composta `(storeId, shortcut)`** — o banco agora é a última linha de defesa contra atalho duplicado (a API também pré-checa para dar mensagem amigável e converte `P2002` em **409**).
 
 ---
 
@@ -377,6 +381,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Status:** tabela pronta, **sem execução automática** ainda (não existe cron/scheduler no backend).
+**Índices:** apenas PK `id` (tabela pequena, sem consulta quente).
 
 ---
 
@@ -412,6 +417,33 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 ```
 
 **Status:** append-only. Não há rotina de retenção/limpeza (ver 9.11). Custo estimado é calculado com base no preço do gpt-4o-mini.
+**Índices:** PK `id`; `(storeId, createdAt)` para a lista e o resumo de 30 dias; `(storeId, level)` para os filtros por nível.
+
+---
+
+### 5.12 Visão consolidada dos índices
+
+O banco tem **26 índices**: 11 chaves primárias + **15 índices de busca/unicidade** (os novos foram criados na Fase 10). Ordem das colunas importa: um índice `(a, b)` atende consultas por `a` ou por `a + b`, mas **não** só por `b`.
+
+| Índice | Tabela | Colunas | Por que existe |
+|---|---|---|---|
+| `stores_slug_key` | `stores` | `slug` (unique) | `getDefaultStore()` busca por slug |
+| `users_email_key` | `users` | `email` (unique) | Login futuro + evita duplicidade |
+| `users_storeId_idx` | `users` | `storeId` | Listar equipe da loja |
+| `products_storeId_active_idx` | `products` | `storeId, active` | Catálogo ativo da loja (API e IA) |
+| `leads_storeId_stage_idx` | `leads` | `storeId, stage` | Funil/Kanban por estágio |
+| `leads_storeId_lastInteraction_idx` | `leads` | `storeId, lastInteraction` | Ordenação do pipeline |
+| `leads_storeId_aiStatus_pausedUntil_idx` | `leads` | `storeId, aiStatus, pausedUntil` | Leads pausados e expiração da pausa |
+| `conversations_leadId_key` | `conversations` | `leadId` (unique) | Garante 1 conversa por lead |
+| `conversations_storeId_lastMessageAt_idx` | `conversations` | `storeId, lastMessageAt` | Inbox ordenado |
+| `messages_conversationId_createdAt_idx` | `messages` | `conversationId, createdAt` | Histórico do chat em ordem |
+| `ai_configs_storeId_key` | `ai_configs` | `storeId` (unique) | 1 config por loja |
+| `ai_knowledge_storeId_createdAt_idx` | `ai_knowledge` | `storeId, createdAt` | 20 ensinamentos mais recentes |
+| `quick_replies_storeId_shortcut_key` | `quick_replies` | `storeId, shortcut` (unique) | Atalho único por loja |
+| `dev_logs_storeId_createdAt_idx` | `dev_logs` | `storeId, createdAt` | Lista e resumo de 30 dias |
+| `dev_logs_storeId_level_idx` | `dev_logs` | `storeId, level` | Filtro por nível na Área Dev |
+
+> `follow_up_campaigns` e as tabelas de ligação não têm índice extra: são pequenas e não têm consulta quente hoje.
 
 ---
 
@@ -528,7 +560,7 @@ const agregado = await prisma.devLog.aggregate({
 
 ### 7.7 Consultas validadas
 
-Todas as receitas desta seção foram executadas contra o banco real em 2026-11-18 e retornaram resultados coerentes (funil 3/1/1, 15 mensagens, 5 chamadas de IA somando 4.574 tokens de entrada e 474 de saída). Se você alterar o schema, rode-as novamente.
+Todas as receitas desta seção foram executadas contra o banco real em 2026-11-18 e retornaram resultados coerentes (funil 3/1/1, 15 mensagens, 5 chamadas de IA somando 4.574 tokens de entrada e 474 de saída). Os planos de execução das consultas mais quentes foram conferidos com `EXPLAIN` e usam os índices da seção 5.12 (`Index Scan` em `messages(conversationId, createdAt)` e nos filtros por `storeId`). Se você alterar o schema, rode-as novamente.
 
 ---
 
@@ -556,6 +588,8 @@ npx prisma db seed          # ATENÇÃO: apaga e recria TODOS os dados da loja p
 ```
 
 > ⚠️ `prisma db push` **não** mantém histórico de migrations. Em produção, prefira `prisma migrate`. Nunca rode `prisma migrate reset` sem confirmar que o banco é de desenvolvimento.
+>
+> ⚠️ Ao adicionar um **unique** (como `quick_replies(storeId, shortcut)`), o Prisma pede `--accept-data-loss` mesmo sem perda real: ele só está avisando que o índice falha se houver duplicatas. **Confira antes** com um `GROUP BY ... HAVING COUNT(*) > 1`; se não houver, a flag é segura.
 
 ---
 
@@ -568,9 +602,9 @@ npx prisma db seed          # ATENÇÃO: apaga e recria TODOS os dados da loja p
 5. **Estágio e IA duplicados.** `leads` e `conversations` guardam `stage`/`aiStatus`/`pausedUntil`. Sempre atualize os dois (use `server/services/leadState.ts`).
 6. **`leads.unreadCount` só cresce.** O incremento acontece ao receber mensagem de cliente, mas nada decrementa. O badge da sidebar usa `messages.read`, não este campo. Se for implementar "marcar como lido", faça os dois.
 7. **`phone` é texto livre.** Existem `(98) 99123-4455`, `+55 98 ...` etc. Qualquer busca por telefone precisa normalizar (só dígitos).
-8. **Faltam índices de performance.** Só existem PKs e uniques. Consultas por `storeId`, `createdAt` e `conversationId` fazem *seq scan*. Com volume, criar índices (`@@index([storeId, createdAt])`) e rodar `db push`/migration.
+8. **Índices só funcionam se a consulta casar com o prefixo.** O banco tem 26 índices (ver 5.12), mas um índice `(storeId, stage)` não ajuda uma query ordenada só por `createdAt`. Antes de otimizar, rode `EXPLAIN (ANALYZE)` e veja se aparece `Index Scan`. Em tabelas de demonstração o planejador pode preferir `Seq Scan` por causa do volume — isso não significa que o índice está errado.
 9. **RAG não é vetorial (ainda).** `ai_knowledge` entra no prompt por recência (20 últimos), não por similaridade. Ensinamentos antigos podem não ser usados.
-10. **`quick_replies.shortcut` é único só na aplicação.** Duas requisições simultâneas podem criar duplicados. O correto futuro é `@@unique([storeId, shortcut])`.
+10. **Unicidade agora é garantida pelo banco.** `quick_replies` tem `@@unique([storeId, shortcut])`; a API ainda pré-checa para devolver mensagem amigável com o dono do atalho e converte violação `P2002` em **409**. Ao criar novas constraints únicas, cheque duplicatas antes e só então rode `prisma db push --accept-data-loss`.
 11. **`dev_logs` cresce para sempre.** Não há retenção; para relatórios, filtre por período. Futuro: apagar logs com mais de 90 dias.
 12. **`follow_up_campaigns` e `users.passwordHash` são preparação.** Não há scheduler nem autenticação ainda — não presuma que existem.
 13. **`isLearned` não é confiável hoje.** O ensinamento é criado em `ai_knowledge`, mas a mensagem não é marcada. Não use esse campo para métricas ainda.

@@ -87,18 +87,33 @@ quickRepliesRouter.post('/', async (req, res) => {
         ? category
         : 'geral';
 
-    const created = await prisma.quickReply.create({
-      data: {
-        storeId: store.id,
-        title: title.trim().slice(0, 120),
-        shortcut: normalizedShortcut,
-        category: normalizedCategory,
-        content: content.trim(),
-      },
-    });
+    const created = await prisma.quickReply
+      .create({
+        data: {
+          storeId: store.id,
+          title: title.trim().slice(0, 120),
+          shortcut: normalizedShortcut,
+          category: normalizedCategory,
+          content: content.trim(),
+        },
+      })
+      .catch((error: any) => {
+        // A unique composta (storeId, shortcut) é a última linha de defesa
+        // contra duas requisições simultâneas criando o mesmo atalho.
+        if (error?.code === 'P2002') {
+          throw Object.assign(
+            new Error(`O atalho ${normalizedShortcut} já está em uso.`),
+            { statusCode: 409 },
+          );
+        }
+        throw error;
+      });
 
     res.status(201).json(formatQuickReply(created));
   } catch (error: any) {
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     console.error('Erro ao criar resposta rápida:', error);
     res.status(500).json({ error: error?.message || 'Falha ao criar resposta rápida' });
   }
