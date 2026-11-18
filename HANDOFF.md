@@ -114,7 +114,13 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 
 ---
 
-## 7. Diário de Execução — Sessão DeepSeek Harness (2026-11-17)
+## 7. Documentação Técnica
+
+- [`docs/database/dicionario-do-banco-de-dados.md`](./docs/database/dicionario-do-banco-de-dados.md) — **Dicionário do Banco de Dados**: visão geral do modelo multi-tenant, diagrama ER, fluxo de uma mensagem, as 11 tabelas com **todas as colunas explicadas**, os 12 enums, receitas SQL/Prisma validadas, acesso/manutenção (Studio, seeds, migrations), pegadinhas comuns e o que existe no schema mas ainda não é usado.
+
+---
+
+## 8. Diário de Execução — Sessões DeepSeek Harness
 
 Registro curto do que foi feito, para o próximo agente auditar sem precisar de histórico de chat:
 
@@ -127,4 +133,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 7. **Fase 7 publicada**: configuração da IA e base de conhecimento persistidas (`/api/ai-config`, `/api/knowledge`), com validação de payload, exclusão de ensinamentos e efeito real no prompt confirmado (tom "vendedor/expressivo" mudou a resposta da OpenAI).
 8. **Fase 8 publicada**: respostas rápidas no PostgreSQL (`/api/quick-replies`), atalho único (409), categoria validada, seletor de categoria + lista com exclusão na tela, seed idempotente (`/grupovip`) — 5 atalhos ativos.
 9. **Fase 9 publicada (2026-11-18)**: Área Dev conectada ao `DevLog` real, resumo de 30 dias (tokens, custo, latência, erros), filtros e diagnóstico de logs por GPT-4o-mini (validado: 485 tokens / 4.120 ms, com log do próprio diagnóstico) + `DevLog` automático de intervenção humana.
-10. **Pendências para a próxima rodada**: paginação/retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.
+10. **Dicionário do banco (2026-11-18)**: documentação completa em `docs/database/`, extraída do banco real (11 tabelas, 122 colunas, 12 enums, 12 FKs, 15 índices) e com as receitas SQL/Prisma executadas e validadas.
+11. **Pendências para a próxima rodada**: paginação/retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.

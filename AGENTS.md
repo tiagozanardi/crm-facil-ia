@@ -8,6 +8,7 @@
 1. **Ao Iniciar Qualquer Tarefa**:
    - Leia obrigatoriamente o arquivo [`HANDOFF.md`](./HANDOFF.md). Ele contém o estado atualizado do projeto, a stack, o que já foi feito e o que é o próximo passo.
    - Verifique a pasta `docs/features/` para entender o histórico de decisões técnicas das features já entregues.
+   - Consulte [`docs/database/dicionario-do-banco-de-dados.md`](./docs/database/dicionario-do-banco-de-dados.md) antes de mexer em schema, Prisma ou consultas — ele explica cada tabela, coluna, enum e as pegadinhas do banco.
    - **NUNCA** assuma ou adivinhe requisitos que possam quebrar a arquitetura existente. Se houver dúvida crítica, pergunte ao usuário.
 
 2. **Ao Concluir Qualquer Tarefa**:
