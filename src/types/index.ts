@@ -131,4 +131,22 @@ export interface DevLogItem {
   message: string;
   details?: Record<string, any>;
   storeId: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  latencyMs?: number;
+}
+
+export interface DevLogSummary {
+  windowDays: number;
+  tokensIn: number;
+  tokensOut: number;
+  tokensTotal: number;
+  estimatedCostUsd: number;
+  aiCalls: number;
+  errors: number;
+  warnings: number;
+  events: number;
+  avgLatencyMs: number;
+  byService: Record<string, number>;
+  firstLogAt: string | null;
 }

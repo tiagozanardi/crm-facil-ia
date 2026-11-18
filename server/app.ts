@@ -9,6 +9,7 @@ import { conversationsRouter } from './routes/conversations';
 import { aiConfigRouter } from './routes/aiConfig';
 import { knowledgeRouter } from './routes/knowledge';
 import { quickRepliesRouter } from './routes/quickReplies';
+import { devLogsRouter } from './routes/devLogs';
 
 export const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/conversations', conversationsRouter);
 app.use('/api/ai-config', aiConfigRouter);
 app.use('/api/knowledge', knowledgeRouter);
 app.use('/api/quick-replies', quickRepliesRouter);
+app.use('/api/dev-logs', devLogsRouter);
 
 // Fallback para rota não encontrada
 app.use((_req, res) => {

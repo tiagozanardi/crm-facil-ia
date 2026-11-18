@@ -191,3 +191,88 @@ export function assertApiKeyConfigured(): void {
     throw new MissingApiKeyError();
   }
 }
+
+export interface DevDiagnosisInput {
+  service: string;
+  level: string;
+  message: string;
+  metadata?: unknown;
+  tokensIn?: number | null;
+  tokensOut?: number | null;
+  latencyMs?: number | null;
+  storeName?: string;
+  storeId: string;
+}
+
+export interface DevDiagnosisResult {
+  diagnosis: string;
+  model: string;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
+/**
+ * Agente Dev: analisa um DevLog técnico e devolve causa raiz + ações.
+ * Usa um prompt de engenheiro sênior (diferente do prompt de atendimento).
+ */
+export async function generateDevDiagnosis(input: DevDiagnosisInput): Promise<DevDiagnosisResult> {
+  const openai = getOpenAIClient();
+
+  const metadataText = input.metadata
+    ? JSON.stringify(input.metadata, null, 2).slice(0, 1200)
+    : 'Sem metadados adicionais.';
+
+  const systemPrompt = `Você é um engenheiro de software sênior especializado em CRM multi-tenant, WhatsApp (Evolution API), OpenAI, Node.js/Express, Prisma e PostgreSQL.
+Sua tarefa é diagnosticar um log técnico de produção de forma objetiva.
+
+Responda SEMPRE em português brasileiro, neste formato, sem introdução:
+- **Causa Raiz:** (1 a 2 frases, a explicação técnica mais provável)
+- **Impacto:** (o que o lojista/cliente final sente)
+- **Severidade:** (Baixa | Média | Alta)
+- **Ação Recomendada:** (até 3 passos numerados e concretos)
+
+Seja específico e curto (máximo 180 palavras). Se os dados não permitirem concluir, diga exatamente qual informação falta investigar.`;
+
+  const userPrompt = `Log técnico para analisar:
+- Loja: ${input.storeName ?? 'desconhecida'} (${input.storeId})
+- Serviço: ${input.service}
+- Nível: ${input.level}
+- Mensagem: ${input.message}
+- Tokens entrada/saída: ${input.tokensIn ?? 0} / ${input.tokensOut ?? 0}
+- Latência: ${input.latencyMs ?? 0}ms
+- Metadados: ${metadataText}`;
+
+  const startTime = Date.now();
+
+  const completion = await openai.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.2,
+    max_tokens: 400,
+  });
+
+  const latencyMs = Date.now() - startTime;
+  const diagnosis = completion.choices[0]?.message?.content?.trim() || '';
+  const tokensIn = completion.usage?.prompt_tokens || 0;
+  const tokensOut = completion.usage?.completion_tokens || 0;
+
+  prisma.devLog
+    .create({
+      data: {
+        storeId: input.storeId,
+        level: 'AI_CALL',
+        service: 'OPENAI',
+        message: `Diagnóstico Dev IA executado sobre um log de ${input.service}.`,
+        tokensIn,
+        tokensOut,
+        latencyMs,
+        metadata: { source: 'dev-diagnosis', model: OPENAI_MODEL },
+      },
+    })
+    .catch(() => {});
+
+  return { diagnosis, model: OPENAI_MODEL, tokensUsed: tokensIn + tokensOut, latencyMs };
+}

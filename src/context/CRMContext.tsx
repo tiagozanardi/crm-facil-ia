@@ -10,6 +10,7 @@ import {
   FollowUpCampaign, 
   DevLogItem, 
   AIKnowledgeItem,
+  DevLogSummary,
   Product 
 } from '../types';
 import { 
@@ -24,6 +25,7 @@ import {
   initialProducts 
 } from '../mock/initialData';
 import { apiService } from '../services/api';
+import type { DevLogsResponse } from '../services/api';
 
 export type ViewType = 
   | 'dashboard' 
@@ -77,6 +79,13 @@ interface CRMContextType {
   campaigns: FollowUpCampaign[];
   toggleCampaign: (id: string) => void;
   devLogs: DevLogItem[];
+  devLogSummary: DevLogSummary | null;
+  refreshDevLogs: (filters?: {
+    level?: string;
+    service?: string;
+    search?: string;
+    limit?: number;
+  }) => Promise<DevLogsResponse | null>;
   devMode: boolean;
   setDevMode: (active: boolean) => void;
   addNotification: (msg: string) => void;
@@ -96,6 +105,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(initialStoreSettings);
   const [campaigns, setCampaigns] = useState<FollowUpCampaign[]>(initialCampaigns);
   const [devLogs, setDevLogs] = useState<DevLogItem[]>(initialDevLogs);
+  const [devLogSummary, setDevLogSummary] = useState<DevLogSummary | null>(null);
   const [devMode, setDevMode] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -120,6 +130,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           backendAIConfig,
           backendKnowledge,
           backendQuickReplies,
+          backendDevLogs,
         ] = await Promise.all([
           apiService.getProducts(),
           apiService.getStoreSettings(),
@@ -128,6 +139,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiService.getAIConfig(),
           apiService.getKnowledge(),
           apiService.getQuickReplies(),
+          apiService.getDevLogs({ limit: 50 }),
         ]);
 
         if (!isMounted) return;
@@ -159,6 +171,10 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (backendQuickReplies && backendQuickReplies.length > 0) {
           setQuickReplies(backendQuickReplies);
+        }
+        if (backendDevLogs) {
+          setDevLogs(backendDevLogs.logs);
+          setDevLogSummary(backendDevLogs.summary);
         }
       } catch (err) {
         console.warn('Backend offline ou inacessível. Usando mock inicial:', err);
@@ -492,6 +508,28 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCampaigns(prev => prev.map(c => c.id === id ? { ...c, active: !c.active } : c));
   };
 
+  /**
+   * Recarrega os logs técnicos do backend (Área Dev), opcionalmente filtrando
+   * por nível/serviço/busca. Também atualiza o resumo de tokens e erros.
+   */
+  const refreshDevLogs = async (filters: {
+    level?: string;
+    service?: string;
+    search?: string;
+    limit?: number;
+  } = {}): Promise<DevLogsResponse | null> => {
+    const data = await apiService.getDevLogs(filters);
+
+    if (!data) {
+      addNotification('⚠️ Não foi possível carregar os logs técnicos do backend.');
+      return null;
+    }
+
+    setDevLogs(data.logs);
+    setDevLogSummary(data.summary);
+    return data;
+  };
+
   return (
     <CRMContext.Provider value={{
       currentView,
@@ -524,6 +562,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       campaigns,
       toggleCampaign,
       devLogs,
+      devLogSummary,
+      refreshDevLogs,
       devMode,
       setDevMode,
       addNotification,

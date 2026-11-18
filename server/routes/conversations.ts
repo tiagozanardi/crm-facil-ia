@@ -160,6 +160,19 @@ conversationsRouter.post('/:leadId/messages', async (req, res) => {
       const store = await getDefaultStore();
       await pauseAIForLead(leadId, store.interventionPauseHours);
       aiPaused = true;
+
+      // Registro técnico para a Área Dev (intervenção humana detectada).
+      prisma.devLog
+        .create({
+          data: {
+            storeId: store.id,
+            level: 'INFO',
+            service: 'CRM_WEBHOOK',
+            message: `Intervenção humana: atendente respondeu ${conversation.leadName}. IA pausada por ${store.interventionPauseHours}h.`,
+            metadata: { leadId, conversationId: conversation.id },
+          },
+        })
+        .catch(() => {});
     }
 
     res.status(201).json({

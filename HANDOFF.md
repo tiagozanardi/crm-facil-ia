@@ -1,6 +1,6 @@
 # PROJETO: CRM ÁGIL + IA (CLIENTE PILOTO: MALAS SLZ)
 > **Arquivo Central de Handoff & Estado do Projeto**
-> Última atualização: 2026-11-17 | Plataformas: Antigravity + DeepSeek Harness
+> Última atualização: 2026-11-18 | Plataformas: Antigravity + DeepSeek Harness
 ---
 
 ## 1. Visão Geral do Produto
@@ -64,6 +64,11 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - `server/routes/quickReplies.ts` (`GET/POST/DELETE /api/quick-replies`) com atalho único por loja (409 explicando o conflito), normalização do atalho e categoria validada.
   - Lista do chat e da tela "Linguagem da IA" agora vêm do banco; formulário ganhou seletor de categoria e a lista permite excluir (otimista com rollback em caso de erro).
   - `prisma/seed-quick-replies.ts` (`npm run seed:quick-replies`): seed idempotente que adicionou o atalho `/grupovip` — loja com 5 respostas rápidas.
+- [x] **Fase 9 - Área Dev com Logs Reais e Diagnóstico por IA**:
+  - `server/routes/devLogs.ts`: `GET /api/dev-logs` (filtros por nível/serviço/busca + resumo de 30 dias com tokens, custo estimado, latência média, erros e eventos por serviço) e `POST /api/dev-logs/:id/diagnose`.
+  - Diagnóstico real via GPT-4o-mini com prompt de engenheiro sênior (causa raiz, impacto, severidade, ações), registrando a própria chamada como `DevLog`.
+  - `DevAdminView` reescrita: cards com métricas do banco, filtros, busca com debounce, botão de atualizar e painel de diagnóstico com tokens/latência.
+  - Intervenção humana no chat agora gera `DevLog` `INFO / CRM_WEBHOOK` (aparece na Área Dev).
 
 ---
 
@@ -105,6 +110,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/06-ia-no-chat-e-rotas-leads-conversas.md`](./docs/features/06-ia-no-chat-e-rotas-leads-conversas.md) (IA no Chat com histórico real, persistência de leads/conversas, pausa de intervenção humana e seed idempotente de leads).
 - [`docs/features/07-persistencia-aiconfig-e-conhecimento.md`](./docs/features/07-persistencia-aiconfig-e-conhecimento.md) (Configuração da linguagem da IA e base de conhecimento/RAG persistidas no PostgreSQL, com validação e exclusão de ensinamentos).
 - [`docs/features/08-respostas-rapidas-persistidas.md`](./docs/features/08-respostas-rapidas-persistidas.md) (Respostas rápidas no PostgreSQL com atalho único, categoria validada, exclusão na tela e seed idempotente).
+- [`docs/features/09-area-dev-logs-reais.md`](./docs/features/09-area-dev-logs-reais.md) (Área Dev com logs e métricas reais do PostgreSQL, filtros e diagnóstico de logs por IA).
 
 ---
 
@@ -120,4 +126,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 6. **Validação com a chave real da OpenAI** (`.env` local, não versionado): Playground 200 / 1403 tokens / 3746ms e Chat 201 / 1392 tokens / 2328ms, com `DevLog` gravado. Mensagens de teste removidas do banco após a validação.
 7. **Fase 7 publicada**: configuração da IA e base de conhecimento persistidas (`/api/ai-config`, `/api/knowledge`), com validação de payload, exclusão de ensinamentos e efeito real no prompt confirmado (tom "vendedor/expressivo" mudou a resposta da OpenAI).
 8. **Fase 8 publicada**: respostas rápidas no PostgreSQL (`/api/quick-replies`), atalho único (409), categoria validada, seletor de categoria + lista com exclusão na tela, seed idempotente (`/grupovip`) — 5 atalhos ativos.
-9. **Pendências para a próxima rodada**: hidratar a Área Dev com `DevLog` real, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.
+9. **Fase 9 publicada (2026-11-18)**: Área Dev conectada ao `DevLog` real, resumo de 30 dias (tokens, custo, latência, erros), filtros e diagnóstico de logs por GPT-4o-mini (validado: 485 tokens / 4.120 ms, com log do próprio diagnóstico) + `DevLog` automático de intervenção humana.
+10. **Pendências para a próxima rodada**: paginação/retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.

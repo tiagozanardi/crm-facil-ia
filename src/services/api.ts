@@ -8,6 +8,8 @@ import {
   AIConfig,
   AIKnowledgeItem,
   QuickReply,
+  DevLogItem,
+  DevLogSummary,
 } from '../types';
 
 const API_BASE = '/api';
@@ -396,4 +398,44 @@ export const apiService = {
       return false;
     }
   },
+
+  // ----------------------------------------------------------------
+  // Área Dev: logs técnicos e diagnóstico por IA
+  // ----------------------------------------------------------------
+  async getDevLogs(params: {
+    level?: string;
+    service?: string;
+    search?: string;
+    limit?: number;
+  } = {}): Promise<DevLogsResponse | null> {
+    try {
+      const query = new URLSearchParams();
+      if (params.level) query.set('level', params.level);
+      if (params.service) query.set('service', params.service);
+      if (params.search) query.set('search', params.search);
+      if (params.limit) query.set('limit', String(params.limit));
+
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      const res = await fetch(`${API_BASE}/dev-logs${suffix}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async diagnoseDevLog(
+    id: string,
+  ): Promise<{ diagnosis: string; model: string; tokensUsed: number; latencyMs: number }> {
+    const res = await fetch(`${API_BASE}/dev-logs/${id}/diagnose`, { method: 'POST' });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
 };
+
+export interface DevLogsResponse {
+  logs: DevLogItem[];
+  total: number;
+  returned: number;
+  summary: DevLogSummary;
+}
