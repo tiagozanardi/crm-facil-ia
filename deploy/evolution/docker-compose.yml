@@ -1,0 +1,99 @@
+name: evolution
+
+# Logs com teto de tamanho: o disco da VM gratuita tem só 30 GB.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: evolution
+      TZ: America/Sao_Paulo
+    # Ajuste para 1 GB de RAM (a VM gratuita). Sem Redis, o Postgres é o único estado.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - random_page_cost=1.1
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 256m
+    networks: [internal]
+
+  evolution-api:
+    # v2.3.7 = última estável SEM ativação de licença (2.4+ exige) e já com as
+    # correções de segurança da série 2.3 (CVE-2026-91997 afetava a 2.3.5).
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution_api
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      # Credenciais da sessão também ficam no Postgres (DATABASE_SAVE_DATA_INSTANCE),
+      # o volume é só uma segunda camada de segurança.
+      - evolution_instances:/evolution/instances
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    mem_limit: 560m
+    networks: [internal]
+    # Não publicamos a porta 8080: só o Caddy fala com a Evolution, pela rede interna.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: evolution_caddy
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - evolution-api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  evolution_instances:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

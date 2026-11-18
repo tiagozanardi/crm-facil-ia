@@ -36,3 +36,7 @@ pnpm-debug.log*
 # Temp
 tmp/
 scratch/
+
+# Infra gerada no servidor (nunca versionar segredos nem o Caddyfile renderizado)
+deploy/evolution/.env
+deploy/evolution/Caddyfile

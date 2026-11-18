@@ -73,6 +73,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
   - 11 estruturas novas no PostgreSQL: índices compostos que casam com as consultas reais (`leads(storeId, stage)`, `messages(conversationId, createdAt)`, `conversations(storeId, lastMessageAt)`, `dev_logs(storeId, createdAt/level)`, entre outros) e **unique `(storeId, shortcut)`** em `quick_replies`.
   - A unicidade do atalho agora é garantida pelo banco; a API mantém a pré-checagem amigável e converte `P2002` em **409**.
   - Banco: 26 índices no total (11 PKs + 15 de busca/unicidade). Dicionário atualizado com a seção 5.12 e planos de execução validados com `EXPLAIN`.
+- [ ] **Fase 11 - Integração Evolution API (WhatsApp real)** — 📝 **em planejamento/execução de infra**: plano em [`docs/features/11-integracao-evolution-api.md`](./docs/features/11-integracao-evolution-api.md) e runbook + artefatos prontos em [`deploy/evolution/README.md`](./deploy/evolution/README.md) (Docker Compose, Caddy/TLS, bootstrap idempotente, backup e verificação). **D1 decidida: GCP e2-micro Always Free.** Aguardando a pessoa executar as Fases A–C (conta/VM/DNS/bootstrap) e decidir D2 (chip), D3 (modo da IA) e D5 (escopo). Nenhum código do app foi alterado ainda.
 
 ---
 
@@ -116,6 +117,7 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - [`docs/features/08-respostas-rapidas-persistidas.md`](./docs/features/08-respostas-rapidas-persistidas.md) (Respostas rápidas no PostgreSQL com atalho único, categoria validada, exclusão na tela e seed idempotente).
 - [`docs/features/09-area-dev-logs-reais.md`](./docs/features/09-area-dev-logs-reais.md) (Área Dev com logs e métricas reais do PostgreSQL, filtros e diagnóstico de logs por IA).
 - [`docs/features/10-indices-e-unicidade-banco.md`](./docs/features/10-indices-e-unicidade-banco.md) (Índices compostos de performance, unique `(storeId, shortcut)` e tratamento de `P2002` na API).
+- [`docs/features/11-integracao-evolution-api.md`](./docs/features/11-integracao-evolution-api.md) (📝 **Planejamento** da integração Evolution API: arquitetura, modelo de dados, ondas de entrega, análise de hospedagem e decisões pendentes).
 
 ---
 
@@ -141,3 +143,5 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 10. **Dicionário do banco (2026-11-18)**: documentação completa em `docs/database/`, extraída do banco real (11 tabelas, 122 colunas, 12 enums, 12 FKs, 15 índices) e com as receitas SQL/Prisma executadas e validadas.
 11. **Fase 10 publicada**: 11 novas estruturas de índice (incluindo unique `(storeId, shortcut)`), `db push` aplicado após checar 0 duplicatas, `P2002` tratado como 409 na API, `EXPLAIN` confirmando `Index Scan` e dicionário atualizado (26 índices no total).
 12. **Pendências para a próxima rodada**: adotar `prisma migrate` (hoje só `db push`), retenção de `DevLog`, billing real por tenant, editar respostas rápidas/conhecimento existentes, RAG vetorial (pgvector), webhooks da Evolution API e testes automatizados de rota.
+13. **Plano da Fase 11 (2026-11-18)**: levantado o estado real do código e escrito o plano da integração Evolution API em `docs/features/11-integracao-evolution-api.md` (3 ondas, `WhatsAppInstance`/`Message.externalId`/`Lead.phoneE164`, webhook, orquestração da IA, comparativo de hospedagem e 7 decisões). **Nada de código de produção foi alterado** — aguardando decisões D1–D7.
+14. **Infra da Fase 11 pronta para executar (2026-11-18)**: D1 decidida (GCP e2-micro Always Free). Criados `deploy/evolution/` (`docker-compose.yml`, `Caddyfile.template`, `.env.example`, `bootstrap.sh` idempotente com swap/Docker/UFW/DuckDNS/HTTPS/backup, `backup.sh`, `README.md` com o runbook GCP completo) e `scripts/check-evolution.ps1`. Versão fixada em **Evolution API v2.3.7** (sem ativação de licença; 2.4+ exige) e porta 8080 não publicada. Próximo passo: pessoa executa Fases A–C; depois eu valido por HTTPS e implemento a Onda 1.

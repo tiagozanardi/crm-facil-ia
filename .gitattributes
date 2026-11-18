@@ -1,0 +1,5 @@
+# Garante que scripts de shell e arquivos de infra cheguem ao Linux com LF,
+# mesmo quando editados em ambientes Windows (autocrlf).
+*.sh        text eol=lf
+*.template  text eol=lf
+.env.example text eol=lf

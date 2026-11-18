@@ -1,0 +1,23 @@
+# Caddyfile.template — o bootstrap troca o domínio abaixo pelo subdomínio DuckDNS.
+# Caddy cuida do HTTPS (Let's Encrypt) e faz proxy para a Evolution na rede interna.
+__DOMAIN__ {
+	encode zstd gzip
+
+	# A interface /manager e a documentação não são usadas pelo CRM e ampliam a
+	# superfície de ataque. Para usar o /manager temporariamente, apague este
+	# bloco e reinicie o Caddy (docker compose restart caddy).
+	handle /manager* /docs* /api-docs* {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy evolution-api:8080
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 5mb
+			roll_keep 3
+		}
+	}
+}
