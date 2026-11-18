@@ -100,6 +100,15 @@ Internet
 3. Em **Faturamento**, confira se existe uma conta de faturamento ativa vinculada ao projeto.
    O `e2-micro` + 30 GB + 1 GB de egress/mês ficam em **R$ 0** mesmo depois do teste.
 
+> **Já usa o Google Cloud?** O console abre no **último projeto usado** — não é erro. Crie um projeto
+> novo (`crm-facil-ia`) e vincule a conta de faturamento que você já tem, em vez de misturar a VM com
+> outros recursos. Se o teste de US$ 300 já venceu, o Google pede para **ativar a conta completa**
+> (o cartão já cadastrado continua valendo); o nível Always Free segue valendo.
+>
+> **Antes de criar a VM**, abra **Compute Engine → Instâncias de VM** no projeto atual e veja se já
+> existe uma `e2-micro` rodando. O Always Free é **1 por conta de faturamento**, não por projeto:
+> uma segunda `e2-micro` seria cobrada (~US$ 6–7/mês). Se houver uma, me avise antes de criar outra.
+
 ### A2. Projeto
 
 1. No topo, clique no seletor de projeto → **Novo projeto**.
