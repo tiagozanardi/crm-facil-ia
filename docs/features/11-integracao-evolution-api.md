@@ -206,6 +206,10 @@ o `unique`. Leads de demonstração sem telefone válido ficam com um sufixo art
 marcá-la como aplicada com `prisma migrate resolve --applied`, e daqui pra frente usar
 `migrate dev` local / `migrate deploy` na Vercel. Isso evita alterar tabela de produção "no escuro".
 
+> **Aplicado em 2026-11-18**: baseline `prisma/migrations/0_init` (marcada como aplicada, sem rodar DDL)
+> + migration `20261118153000_whatsapp_onda1` (100% aditiva). Backfill de `Lead.phoneE164` rodou
+> `5/5` (`npm run backfill:phones`) e `npm run build` passou. O Prisma agora é a fonte das migrations.
+
 ---
 
 ## 6. Contratos de API (novos e alterados)
@@ -319,7 +323,7 @@ a EVO já instalada.
 | **D3** | A IA pode enviar sozinha desde o início? | (a) automático com kill switch · (b) 1–2 dias em "modo sombra" e depois automático · (c) sempre sugestão manual nesta fase | **(a)**, mas com `autoReplyEnabled=false` de fábrica e o teste ligado manualmente depois do checklist |
 | **D4** | Onde roda o backend/webhook | (a) manter Express na Vercel · (b) mover para a mesma VM da EVO | ✅ **(a)** decidido por mim (reversível): já está pronto; mover só se aparecer timeout/cold start |
 | **D5** | Escopo do MVP | (a) só texto · (b) texto + imagens · (c) completo (áudio, grupos, documentos) | **(a)** com (b) na sequência; áudio é o que mais consome tempo e o mais arriscado |
-| **D6** | Migrations | (a) adotar `prisma migrate` com baseline · (b) continuar `db push` | ✅ **(a)** decidido por mim: vamos alterar tabelas com dados de produção |
+| **D6** | Migrations | (a) adotar `prisma migrate` com baseline · (b) continuar `db push` | ✅ **(a) aplicado em 2026-11-18**: baseline `0_init` + `20261118153000_whatsapp_onda1`, backfill 5/5 |
 | **D7** | Retenção de conversas (LGPD) | (a) 12 meses · (b) 6 meses · (c) indefinido | **(a)** — pode ser ajustado na Onda 3 |
 
 ---
