@@ -99,10 +99,18 @@ CRM moderno, ultrassimplificado e inteligente para pequenos lojistas que vendem 
 - **Configuração local necessária no Windows** (por causa do schannel + sandbox de terminal):
   ```powershell
   git config --local http.sslBackend openssl
-  git config --local credential.https://github.com.helper "!gh auth git-credential"
+  git config --local credential.https://github.com.helper manager
+  git remote set-url origin https://tiagozanardi@github.com/tiagozanardi/crm-facil-ia.git
   ```
-  Sem isso, `git fetch/push` falha com `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`.
-- **Observação DSH**: `npm run build` (esbuild) e `git push` (credential helper via `sh`) precisam rodar com permissão ampliada fora do sandbox padrão de escrita do workspace.
+  Sem o `openssl`, `git fetch/push` falha com `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`.
+- **Atenção credencial (2026-11-18)**: a conta ativa do `gh` neste ambiente é **`osfilhosdojobs`**, que **não tem
+  write** neste repositório (403). O Gerenciador de Credenciais (GCM) tem a credencial de **`tiagozanardi`**;
+  por isso o helper é `manager` e o remote carrega o usuário na URL. Se algum ambiente voltar a usar
+  `!gh auth git-credential`, o push passa a falhar com 403 (ou trava esperando prompt).
+- **Observação DSH**: `npm run build` (esbuild), `prisma` (schema-engine) e `git push` (credential helper via `sh`)
+  precisam rodar com permissão ampliada fora do sandbox padrão de escrita do workspace. O Prisma também falha
+  com `SEC_E_NO_CREDENTIALS` no TLS nativo sob o sandbox — usar permissão ampliada nos comandos que conectam
+  ao Supabase.
 
 ---
 
@@ -147,3 +155,4 @@ Registro curto do que foi feito, para o próximo agente auditar sem precisar de 
 14. **Infra da Fase 11 pronta para executar (2026-11-18)**: D1 decidida (GCP e2-micro Always Free). Criados `deploy/evolution/` (`docker-compose.yml`, `Caddyfile.template`, `.env.example`, `bootstrap.sh` idempotente com swap/Docker/UFW/DuckDNS/HTTPS/backup, `backup.sh`, `README.md` com o runbook GCP completo) e `scripts/check-evolution.ps1`. Versão fixada em **Evolution API v2.3.7** (sem ativação de licença; 2.4+ exige) e porta 8080 não publicada. Próximo passo: pessoa executa Fases A–C; depois eu valido por HTTPS e implemento a Onda 1.
 15. **Infra da Fase 11 no ar (2026-11-18)**: VM `e2-micro` em `us-east1-b` (IP 35.185.62.116), DuckDNS `crm-evo-malas.duckdns.org`, Evolution API **v2.3.7** + Postgres 16 + Caddy no Docker. HTTPS validado com **HTTP 200** (`{"status":200,...,"version":"2.3.7"}`), certificado Let's Encrypt emitido, portas 80/443 abertas. Bug encontrado e corrigido no caminho: `handle` do Caddy aceita **um** matcher (o template passava três paths) — correção no commit `a4c39b6`; comandos `docker compose` exigem `sudo` porque o `.env` é `600` do root.
 16. **Schema da Onda 1 aplicado (2026-11-18)**: adotado `prisma migrate` com baseline `0_init` + migration aditiva `20261118153000_whatsapp_onda1` (enums `WhatsAppStatus`/`MessageStatus`, tabela `whatsapp_instances`, `messages.externalId/status/error`, `leads.phoneE164` + unique, flags em `ai_configs`). Backfill `npm run backfill:phones` rodou **5/5** e `npm run build` passou. O `prisma generate` reclamou `EPERM` ao trocar a DLL do engine porque há processo Node segurando o arquivo — o client JS foi atualizado (backfill e verificação usaram os campos novos); rodar `npx prisma generate` de novo com o dev server parado conclui limpo. Backup lógico pré-migration em `tmp/backup-pre-onda1.json` (gitignored).
+17. **Credencial de push corrigida (2026-11-18)**: a conta ativa do `gh` neste ambiente é `osfilhosdojobs`, sem write no repositório (403); o push travava ou falhava. Ajustado para o Gerenciador de Credenciais (`credential.https://github.com.helper manager`) e remote com `tiagozanardi@` na URL; `git fetch/push` voltaram a funcionar e o `main` está sincronizado.
