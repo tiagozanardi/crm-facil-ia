@@ -37,9 +37,19 @@
 escanear o QR, e mexer no painel da Vercel. Tudo o resto (arquivos, scripts, código, testes de API,
 diagnóstico) é comigo.
 
-> **Modo turbo (opcional):** se você quiser, eu gero um par de chaves SSH e você cola a pública no campo
-> "Chaves SSH" da VM no console. Aí eu consigo operar a VM diretamente (logs, restart, ajustes) em vez de
-> te pedir para colar saídas. Dá para remover a chave no fim da configuração.
+> **Modos de operação (escolha um):**
+>
+> | Modo | O que você faz | Vantagem | Exposição |
+> |---|---|---|---|
+> | **Manual** | cola comandos e devolve a saída | zero configuração | nenhuma |
+> | **Turbo light** | roda `sudo bash doctor.sh` e cola o relatório | 1 rodada por diagnóstico | nenhuma |
+> | **Turbo (SSH)** | cola 1 chave pública na VM | eu opero a VM direto (logs, restart, ajustes) | chave com root-equivalente **na VM** |
+>
+> No modo turbo eu gero um par de chaves dedicado, você cola a **pública** em
+> **VM → Editar → Chaves SSH → Adicionar item**, e eu acesso por SSH com a privada (que fica em
+> `deploy/keys/`, ignorada pelo Git). Revogar é remover a chave no mesmo painel — vale a pena manter só
+> durante a configuração e apagar no fim. O que está na VM: Evolution + Postgres + sessão do WhatsApp.
+> **Não** ficam lá as chaves do Supabase nem da OpenAI.
 
 ---
 
@@ -281,6 +291,15 @@ antiga. O caminho seguro é `docker compose down`, editar `.env` e subir de novo
 ---
 
 ## 11. Problemas comuns
+
+> Antes de tudo, rode o diagnóstico de 1 comando e me mande a saída (ela não contém segredos):
+>
+> ```bash
+> cd /opt/crm-facil-ia/deploy/evolution && sudo bash doctor.sh
+> ```
+>
+> Ele mostra containers, memória/swap, disco, HTTPS público, `.env` mascarado, logs dos 3 serviços,
+> cron e backups.
 
 | Sintoma | Causa provável | Solução |
 |---|---|---|

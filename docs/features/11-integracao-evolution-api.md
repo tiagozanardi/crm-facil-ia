@@ -426,6 +426,7 @@ Criados em `deploy/evolution/` (uma VM Ubuntu 24.04 no GCP `e2-micro`):
 | `bootstrap.sh` | Instalação idempotente: pacotes, swap de 2 GB, Docker, segredos, UFW, DuckDNS/cron, stack no ar, espera do HTTPS e backup diário. |
 | `backup.sh` | `pg_dump` diário às 03:30 em `/var/backups/evolution`, retenção de 7 dias. |
 | `README.md` | Runbook completo (GCP, DuckDNS, bootstrap, Vercel, operação, troubleshooting, custos, segurança). |
+| `doctor.sh` | Diagnóstico de 1 comando (containers, memória/swap, disco, HTTPS, `.env` mascarado, logs, cron, backups) para colar no chat sem expor segredos. |
 | `scripts/check-evolution.ps1` | Verificação local: HTTPS, versão e autenticação, sem imprimir a chave. |
 
 **Divisão:** só você pode criar/autenticar a conta Google, aceitar faturamento, rodar o bootstrap na sua

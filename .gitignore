@@ -40,3 +40,6 @@ scratch/
 # Infra gerada no servidor (nunca versionar segredos nem o Caddyfile renderizado)
 deploy/evolution/.env
 deploy/evolution/Caddyfile
+
+# Chaves SSH do "modo turbo" (nunca versionar)
+deploy/keys/
