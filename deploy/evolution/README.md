@@ -71,7 +71,7 @@ Internet
 | Máquina | `e2-micro` (2 vCPU compartilhadas, 1 GB) | é o tipo coberto pelo nível gratuito |
 | Disco | 30 GB, disco permanente **padrão** | limite do Always Free |
 | Sistema | Ubuntu 24.04 LTS | suporte longo, Docker trivial |
-| Versão da Evolution | **v2.3.7** (fixa) | última estável **sem ativação de licença** (2.4+ exige) e já corrigida contra o CVE-2026-91997 (que afetava a 2.3.5) |
+| Versão da Evolution | **v2.3.7** (fixa) | última estável **sem ativação de licença** (2.4+ exige) e posterior à 2.3.5, onde o CVE-2026-91997 foi reportado; 8080 fechada e `/manager` bloqueado como defesa extra |
 | Banco da Evolution | Postgres local em Docker | não depende do Supabase nem de free tier que pausa |
 | Cache | memória (`CACHE_LOCAL_ENABLED=true`) | ~80 MB de RAM a menos |
 | TLS | Caddy + Let's Encrypt | certificado automático e renovação sozinha |

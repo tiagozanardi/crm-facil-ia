@@ -434,6 +434,7 @@ Todo o resto (arquivos, scripts, código, chamadas de API e diagnóstico) é meu
 chave SSH sua para eu operar a VM diretamente.
 
 **Por que v2.3.7 e não a mais nova:** a partir da 2.4.0 a Evolution exige ativação de licença gratuita
-(login no navegador). A 2.3.7 é estável, não exige licença e já corrige o CVE-2026-91997 (que afetava a
-2.3.5). Se um dia precisarmos da API oficial da Meta, aí sim subimos para 2.4.x e ativamos a licença
+(login no navegador). A 2.3.7 é estável, não exige licença e é posterior à 2.3.5, onde o CVE-2026-91997
+(RCE não autenticado) foi reportado. Como defesa extra, a porta 8080 não é publicada e o `/manager` é
+bloqueado no Caddy. Se um dia precisarmos da API oficial da Meta, subimos para 2.4.x e ativamos a licença
 community (gratuita).

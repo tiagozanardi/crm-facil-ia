@@ -44,8 +44,9 @@ services:
     networks: [internal]
 
   evolution-api:
-    # v2.3.7 = última estável SEM ativação de licença (2.4+ exige) e já com as
-    # correções de segurança da série 2.3 (CVE-2026-91997 afetava a 2.3.5).
+    # v2.3.7 = última estável SEM ativação de licença (2.4+ exige) e posterior à
+    # 2.3.5, onde o CVE-2026-91997 (RCE não autenticado) foi reportado. Como defesa
+    # extra, a porta 8080 não é publicada e o /manager fica bloqueado no Caddy.
     image: evoapicloud/evolution-api:v2.3.7
     container_name: evolution_api
     restart: unless-stopped
