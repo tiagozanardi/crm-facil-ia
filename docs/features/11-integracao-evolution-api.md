@@ -1,7 +1,7 @@
 # Feature Handoff: Integração Evolution API (WhatsApp real)
-- **Data**: 2026-11-18
+- **Data**: 2026-11-19
 - **Agente / Plataforma**: DeepSeek Harness
-- **Status**: 📝 **Planejamento** (nada implementado ainda — aguardando decisões do responsável)
+- **Status**: 🚧 **Parcial** — Onda 1 em andamento: infra + schema + S1 (cliente) + S2 (rotas da instância) + S3 (webhook) entregues; faltam S4 (envio real) e S5 (frontend)
 
 > Este documento é o **plano** da Fase 11. Ele será atualizado para "Concluído/Parcial" conforme
 > cada onda for entregue, seguindo o template do `AGENTS.md`.
@@ -100,12 +100,14 @@ atualiza status; se o humano enviou, a pausa de 24h da IA é aplicada (regra já
       `findInstance`) com timeout, erros tipados e `DevLog` (INFO em sucesso, ERROR em falha, latência).
       **S1 concluído em 2026-11-18** — detalhes e contratos verificados em
       [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s1--cliente-serverservicesevolutionts---concluído-em-2026-11-18).
-- [ ] Modelo `WhatsAppInstance` + migration (ver seção 5).
-- [ ] `POST /api/whatsapp/instance` (cria instância + configura webhook), `GET /api/whatsapp/instance`
+- [x] Modelo `WhatsAppInstance` + migration (ver seção 5).
+- [x] `POST /api/whatsapp/instance` (cria instância + configura webhook), `GET /api/whatsapp/instance`
       (status + QR), `POST /api/whatsapp/instance/reconnect|logout|restart`.
-- [ ] `POST /api/webhooks/evolution`: segredo no header, allowlist de eventos, dedupe por `externalId`,
+- [x] `POST /api/webhooks/evolution`: segredo no header, allowlist de eventos, dedupe por `externalId`,
       upsert lead/conversa/mensagem em transação; `CONNECTION_UPDATE` atualiza o status da instância;
       `QRCODE_UPDATED` guarda o QR em cache.
+      **S3 concluído em 2026-11-19** — comportamento, decisões e validação em
+      [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s3--webhook-serverrouteswebhooksts---concluído-em-2026-11-19).
 - [ ] `POST /api/conversations/:leadId/messages` e `/ai-reply` passam a **enviar** pelo WhatsApp
       (feature flag `EVOLUTION_ENABLED`, com fallback para o comportamento atual quando desligada).
 - [ ] Tela **"Conexão WhatsApp"** em Configurações: status (conectado/desconectado/aguardando QR),
@@ -411,9 +413,11 @@ número do piloto.
 
 1. 🧑 **Você:** Fases A e B do runbook (conta/projeto/VM + DuckDNS) e Fase C (bootstrap) —
    ver [`deploy/evolution/README.md`](../../deploy/evolution/README.md).
-2. 🤖 **Eu:** valido a Evolution por HTTPS (`scripts/check-evolution.ps1`) e já implemento a Onda 1
+2. 🤖 **Eu:** validar a Evolution por HTTPS (`scripts/check-evolution.ps1`) e implementar a Onda 1
    (schema + cliente + webhook + tela de conexão), testando com um número de teste.
-3. 🧑 **Você:** cola as variáveis na Vercel (Fase E) e escaneia o QR quando a tela existir.
+   **Feito até aqui**: schema, S1 (cliente), S2 (rotas `/api/whatsapp`) e S3 (webhook, validado em
+   produção em 2026-11-19). Próximo: S4 (envio real) e S5 (tela de conexão/polling).
+3. 🧑 **Você:** escaneia o QR quando a tela existir (D2, chip dedicado).
 4. Só então conectamos o número do piloto e ligamos a IA (`autoReplyEnabled`).
 
 **Continua em aberto (não bloqueia a infra):** D2 (chip dedicado), D3 (modo da IA) e D5 (escopo do MVP).

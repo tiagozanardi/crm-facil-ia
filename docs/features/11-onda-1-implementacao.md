@@ -1,7 +1,8 @@
 # Fase 11 — Onda 1: Brief de implementação (código)
 
-> **Status**: infraestrutura e schema prontos; **código pendente**. Este arquivo é o ponto de entrada
-> para quem for implementar a Onda 1, sem precisar do histórico do chat que montou a infra.
+> **Status**: infraestrutura, schema e **S1–S3 prontos**; S4 (envio real) e S5 (frontend) pendentes.
+> Este arquivo é o ponto de entrada para quem for implementar a Onda 1, sem precisar do histórico do
+> chat que montou a infra.
 > O plano completo/arquitetura está em [`11-integracao-evolution-api.md`](./11-integracao-evolution-api.md);
 > o runbook da VM em [`../../deploy/evolution/README.md`](../../deploy/evolution/README.md).
 
@@ -18,14 +19,14 @@
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
 | API na Vercel | ✅ **200** em `/api/health` e `/api/whatsapp/instance` (envs + imports ESM corrigidos) |
-| Código da integração | 🟡 **S1 e S2 concluídos** (cliente + rotas `/api/whatsapp`); S3–S5 pendentes |
+| Código da integração | 🟡 **S1, S2 e S3 concluídos** (cliente + rotas `/api/whatsapp` + webhook); S4–S5 pendentes |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
 `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL`.
 
-**Decisões fechadas**: D1 (GCP), D4 (backend na Vercel), D6 (`prisma migrate`).
-**Pendentes**: D2 (chip dedicado), D3 (IA automática × sombra), D7 (retenção — pode ficar para a Onda 3)
-e a **URL pública do CRM na Vercel** (destino do webhook).
+**Decisões fechadas**: D1 (GCP), D4 (backend na Vercel), D6 (`prisma migrate`) e a URL pública do CRM
+(`https://crm-facil-ia.vercel.app`, destino do webhook).
+**Pendentes**: D2 (chip dedicado), D3 (IA automática × sombra) e D7 (retenção — pode ficar para a Onda 3).
 
 ---
 
@@ -118,17 +119,46 @@ cabeçalho secreto presente.
 no Supabase** (`P1001`, pooler). O retry caiu no caminho idempotente e gravou a linha — estado parcial é
 recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/connect`.
 
-### S3 — Webhook `server/routes/webhooks.ts`
-- `POST /api/webhooks/evolution`, público, com header secreto (`EVOLUTION_WEBHOOK_SECRET`, comparação timing-safe).
-- `MESSAGES_UPSERT`: ignorar `fromMe`, grupos (`@g.us`), broadcast e mídia (MVP texto).
-  - `externalId = data.key.id`; se já existe → 200 sem processar.
-  - `phoneE164` a partir de `data.key.remoteJid`; upsert de `Lead` (NOVO/ATENDIMENTO_IA) + `Conversation` + `Message(CLIENT)`.
-  - `fromMe` de origem externa (humano pelo celular) → `Message(AGENT)` + `pauseAIForLead`.
-- `CONNECTION_UPDATE` → atualiza `WhatsAppInstance.status`/`lastSeenAt`.
-- `QRCODE_UPDATED` → cache do QR.
-- Sempre responder 200 rápido; processamento síncrono curto (Vercel 300s).
+### S3 — Webhook `server/routes/webhooks.ts` — ✅ **concluído em 2026-11-19**
 
-#### Contrato dos eventos (Evolution v2) — **confirmar com payload real antes de fechar**
+Registrado em `server/app.ts` (`app.use('/api/webhooks', webhooksRouter)`), **sem alteração de schema**.
+`POST /api/webhooks/evolution` é público e autenticado pelo header `x-evolution-webhook-secret`
+(comparação timing-safe: sha256 + `timingSafeEqual`). Um `GET` na mesma rota responde **405** com
+`secretConfigured` apenas para conferir o deploy.
+
+**Comportamento por evento**
+
+| Evento | O que faz |
+|---|---|
+| `MESSAGES_UPSERT` | Ignora grupo (`@g.us`), broadcast, newsletter, `@lid` sem alternativa e mídia/sem texto. Dedupe por `externalId` (`data.key.id`); lead por `(storeId, phoneE164)`; `Conversation`; `Message(CLIENT)` em transação. `fromMe` de humano → `Message(AGENT)` + `pauseAIForLead(hours)` + `DevLog CRM_WEBHOOK`. |
+| `CONNECTION_UPDATE` | `open/connecting/close` → `WhatsAppInstance.status` + `lastSeenAt`; `open` limpa o QR e grava `phoneNumber` quando o payload traz `wuid/ownerJid/user`. |
+| `QRCODE_UPDATED` | Cache do `qrcode.base64` + status `CONNECTING` (não rebaixa sessão já `CONNECTED`). |
+| `MESSAGES_UPDATE` | Ticks por `externalId` (`PENDING/SERVER_ACK/DELIVERY_ACK/READ/PLAYED/ERROR`), atualizando `status/delivered/read`. |
+| Outros | 200 `unsupported-event`, sem escrita e sem log. |
+
+**Códigos de resposta**: 200 processado/ignorado/duplicado; 400 payload inválido (JSON ou sem
+`event`); 401 segredo ausente/errado; 503 `WEBHOOK_NOT_CONFIGURED` (env ausente) ou
+`DATABASE_UNAVAILABLE` (pooler caído, para a Evolution reentregar); 500 erro inesperado + `DevLog ERROR`.
+
+**Decisões**
+
+- `EVOLUTION_ENABLED` **não** bloqueia o recebimento (só o envio): o CRM registra mensagens com o
+  envio ainda desligado.
+- **Fail-closed**: nunca grava `Message` sem `externalId` (não haveria dedupe) nem lead com telefone
+  inválido. O motivo (`group`, `broadcast`, `lid-jid`, `unsupported:imageMessage`, `missing-external-id`,
+  `fromme-unknown-contact`, `invalid-phone`…) vai para o `DevLog` em `WARN`, com **nomes de campos** —
+  nunca o texto nem o telefone completo.
+- `fromMe` de contato que não existe no CRM **não cria lead** (evita poluir o funil com mensagem de saída).
+- Parser tolerante (o contrato ainda não foi visto num payload real): `event` em `messages.upsert` ou
+  `MESSAGES_UPSERT`; `data` objeto ou array; texto em `conversation` ou `extendedTextMessage.text`;
+  desembrulha `ephemeralMessage`, `viewOnceMessage`, `documentWithCaptionMessage`, `editedMessage`;
+  `@lid` tenta `remoteJidAlt`/`senderPn`/`participantPn`.
+- Um `DevLog EVOLUTION_API` por evento (latência + resumo). O log é **aguardado** (uma linha, é a
+  evidência na Área Dev); falha de log não derruba o webhook.
+- Na mensagem `fromMe`, a mensagem é gravada **antes** da pausa: se a pausa falhar, o registro não se
+  perde e a falha vira `DevLog ERROR`.
+
+#### Contrato de referência (usado no parser; ainda não confirmado com payload real)
 
 ```jsonc
 // MESSAGES_UPSERT — mensagem recebida (ou enviada, quando fromMe = true)
@@ -163,33 +193,63 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 Pontos de atenção: `data` pode vir como **array** em `messages.update`; o texto pode estar em
 `message.conversation` **ou** `message.extendedTextMessage.text`; `remoteJid` pode terminar em
 `@s.whatsapp.net` (pessoa) ou `@g.us` (grupo); `fromMe: true` é eco do próprio número (CRM **ou** celular).
-Fonte: documentação/DeepWiki e issues da Evolution — **não** validado com payload nosso ainda (falta chip).
+Fonte: documentação/DeepWiki e issues da Evolution. **Não** validado com payload nosso ainda (falta
+chip); o parser cobre essas variações e registra a estrutura recebida quando não entende.
 
-#### Plano de teste sem chip (a URL pública já responde)
+#### Validação executada (2026-11-19)
+
+Bateria de 15 casos `curl`, rodada **local** (`npm run server` + Supabase real) e **em produção**
+(`https://crm-facil-ia.vercel.app`), com o mesmo resultado:
+
+| Caso | Resultado |
+|---|---|
+| segredo errado / header ausente | 401 |
+| payload sem `event` | 400 |
+| `CLIENT` com `conversation` | 200; Lead + Conversation + Message(CLIENT) |
+| reenvio do mesmo `externalId` | 200; `duplicates: 1`, nada duplicado |
+| `fromMe` | 200; Message(AGENT), `INTERVENCAO_HUMANA`, `pausedUntil` +24h |
+| `extendedTextMessage` | 200; texto extraído |
+| grupo / broadcast / mídia | 200 ignorado (`group`, `broadcast`, `unsupported:imageMessage`) |
+| `CONNECTION_UPDATE` `open` | 200; `CONNECTED` + `lastSeenAt` |
+| `QRCODE_UPDATED` | 200; QR em cache |
+| `MESSAGES_UPDATE` (data em array) | 200; mensagem vira `READ` |
+| evento desconhecido / instância desconhecida | 200 `unsupported-event` / `unknown-instance` |
+
+Extras de fail-closed: `fromMe` de contato desconhecido, JID `@lid` e mensagem sem `key.id` → 200
+ignorado com motivo; `ephemeralMessage` com texto → gravado. Latência: **304 ms–3,1 s** em produção
+(o caminho `fromMe` é o mais longo: lead + conversa + transação + pausa + 2 logs) e 1–10,6 s local
+(RTT do pooler). Dentro dos 300 s da Vercel.
+
+**Limpeza**: os 2 leads de fixture (cascade em conversa/mensagens) e os `DevLog` do webhook foram
+apagados; a linha `whatsapp_instances` foi **restaurada** de um snapshot (`CONNECTING`, QR de 13.318
+bytes, `lastSeenAt` original). Estado final conferido: 5 leads, 15 mensagens, 1 instância.
+
+**Exemplo de reprodução** (o script usado ficou em `tmp/`, gitignored; recriar se precisar):
 
 ```powershell
-# 1. segredo recusado
-curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution -H "Content-Type: application/json" -d '{"event":"messages.upsert"}'
-# esperado: 401
-
-# 2. payload válido (troque o segredo pelo valor de EVOLUTION_WEBHOOK_SECRET no .env)
+$secret = (Get-Content .env | Where-Object { $_ -match '^EVOLUTION_WEBHOOK_SECRET=' } |
+  ForEach-Object { $_.Substring($_.IndexOf('=') + 1).Trim().Trim('"') })
+$json = '{"event":"messages.upsert","instance":"crm-malas-slz","data":{"key":{"remoteJid":"5598999990001@s.whatsapp.net","fromMe":false,"id":"FIXTURE-S3-001"},"pushName":"Teste S3","message":{"conversation":"teste do webhook"}}}'
+[System.IO.File]::WriteAllText("$PWD\tmp\payload.json", $json, (New-Object System.Text.UTF8Encoding($false)))
 curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
-  -H "Content-Type: application/json" -H "x-evolution-webhook-secret: $env:EVOLUTION_WEBHOOK_SECRET" `
-  -d '{"event":"messages.upsert","instance":"crm-malas-slz","data":{"key":{"remoteJid":"5598900000000@s.whatsapp.net","fromMe":false,"id":"FIXTURE-S3-001"},"pushName":"Teste S3","message":{"conversation":"teste do webhook"},"messageType":"conversation","messageTimestamp":1735689600}}'
-# esperado: 200 e Lead/Conversation/Message criados como CLIENT
-
-# 3. reenvio do MESMO id → 200 e nada duplicado
-# 4. fromMe:true → Message(AGENT) + IA pausada (pausedUntil no futuro)
-# 5. @g.us, status@broadcast e messageType de mídia → 200 ignorado
-# 6. CONNECTION_UPDATE state=open → WhatsAppInstance CONNECTED + lastSeenAt
+  -H "Content-Type: application/json" -H "x-evolution-webhook-secret: $secret" `
+  --data-binary "@tmp\payload.json"
+# 200 e Lead/Conversation/Message(CLIENT). Limpar o lead por phoneE164 (cascade) e os DevLogs
+# com "Webhook Evolution" na mensagem; se testou CONNECTION_UPDATE, restaurar o status da instância.
 ```
 
-Limpar depois: apagar o `Lead` de fixture (cascade em `Conversation`/`Message`) e os `DevLog` de teste.
+> **Pegadinha do Windows PowerShell 5.1**: JSON com aspas em `curl.exe -d '...'` é reescrito pelo
+> shell e chega inválido (o body-parser responde HTML 400). Use arquivo (`--data-binary "@..."`) ou
+> `Invoke-RestMethod -Body` com `ConvertTo-Json`.
 
 ### S4 — Envio real em `conversations.ts`
 - `POST /:leadId/messages` e `/ai-reply`: com `EVOLUTION_ENABLED=true` e instância `CONNECTED`,
   gravar `Message(PENDING)` → `sendText` → `SENT` + `externalId`; erro → `FAILED` + `error` + `DevLog`.
 - Sem a flag, manter o comportamento atual (não quebrar a demo).
+- **Corrida do eco (atenção)**: o `MESSAGES_UPSERT` `fromMe` do próprio CRM pode chegar **antes** de o
+  S4 gravar o `externalId`; nessas condições o S3 gravaria um `AGENT` duplicado e pausaria a IA por 24h.
+  O S4 deve gravar `PENDING` antes do envio e o webhook deve casar `fromMe` com uma mensagem `PENDING`
+  recente (texto + janela curta) antes de tratar como intervenção humana.
 
 ### S5 — Frontend
 - `src/services/api.ts`: `getWhatsAppInstance`, `createWhatsAppInstance`, `connectWhatsAppInstance`, `logoutWhatsAppInstance`.
@@ -257,16 +317,20 @@ Limpar depois: apagar o `Lead` de fixture (cascade em `Conversation`/`Message`) 
    `server/app.js` presente no bundle. Corrigido com `.js` explícito em **45 imports** de `server/**` e no
    entry (`api/index.ts`), que agora também registra falha de boot no log.
    **Validado em produção**: `/api/health` → 200 `database: connected`, `/api/whatsapp/instance` → 200 com
-   `crm-malas-slz`. O webhook da Evolution já aponta para `.../api/webhooks/evolution` e começa a
-   funcionar quando o S3 existir.
-2. **D3**: IA automática (recomendado: começar com `autoReplyEnabled=false` e ligar após o checklist).
-3. **D2**: chip dedicado comprado/ativado (necessário só no QR).
-4. Variáveis na Vercel (todas as da Onda 1): `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY`,
+   `crm-malas-slz`. O webhook da Evolution já aponta para `.../api/webhooks/evolution` e foi **entregue no
+   S3** (405 no `GET` e 200 nos eventos, validado em produção em 2026-11-19).
+2. **Payload real de `MESSAGES_UPSERT`** — ainda não existe (falta chip). O S3 usa o contrato do brief
+   com parser tolerante e fail-closed. No primeiro evento real, conferir se `data.key.id`,
+   `data.key.remoteJid` e o texto chegaram onde o parser espera; se algo vier diferente, o `DevLog` mostra
+   a estrutura e o ajuste é pontual.
+3. **D3**: IA automática (recomendado: começar com `autoReplyEnabled=false` e ligar após o checklist).
+4. **D2**: chip dedicado comprado/ativado (necessário só no QR).
+5. Variáveis na Vercel (todas as da Onda 1): `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY`,
    `OPENAI_MODEL`, `EVOLUTION_ENABLED`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`,
    `EVOLUTION_WEBHOOK_SECRET`, `EVOLUTION_INSTANCE_PREFIX`, `APP_PUBLIC_URL`, `EVOLUTION_TIMEOUT_MS`
    e `API_AUTH_TOKEN` (Onda 3). O `EVOLUTION_WEBHOOK_SECRET` precisa ser **o mesmo** do `.env` local,
    senão o webhook do S3 rejeita os eventos.
-5. **Rotacionar a `EVOLUTION_API_KEY`** (opcional, recomendado): o valor apareceu num print de terminal
+6. **Rotacionar a `EVOLUTION_API_KEY`** (opcional, recomendado): o valor apareceu num print de terminal
    durante a sessão do S2, e a chave é global (dá acesso a todas as instâncias da VM).
 
 ---
@@ -277,22 +341,23 @@ Limpar depois: apagar o `Lead` de fixture (cascade em `Conversation`/`Message`) 
 - [ ] Mensagem real do celular aparece no chat em ≤5 s (sem duplicar).
 - [ ] Resposta digitada no CRM chega no celular com tick de enviado.
 - [ ] `EVOLUTION_ENABLED=false` mantém o comportamento atual (demo) sem erro.
-- [ ] `DevLog` de `EVOLUTION_API` registra sucesso, falha e latência.
-- [ ] `npm run build` e `tsc --noEmit` verdes.
-- [ ] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.
+- [x] `DevLog` de `EVOLUTION_API` registra sucesso, falha e latência (validado no S3).
+- [x] `npm run build` e `tsc --noEmit` verdes.
+- [x] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.
 
 ---
 
 ## 8. Prompt sugerido para o novo chat
 
 > Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md` e
-> `docs/features/11-onda-1-implementacao.md`. Continue a Onda 1 pelo **S3 (webhook
-> `POST /api/webhooks/evolution`)**, sem alterar o schema (as tabelas e campos já existem).
-> A API já está no ar na Vercel (`/api/health` → 200, `/api/whatsapp/instance` → 200) e o webhook da
-> Evolution já aponta para `https://crm-facil-ia.vercel.app/api/webhooks/evolution` com o cabeçalho
-> `x-evolution-webhook-secret`. Use permissão ampliada para Prisma/build/push e me mostre o diff antes
-> de qualquer mudança no banco. Teste com fixtures via `curl` na URL pública (o plano está no S3) e
-> limpe os dados de fixture no fim.
+> `docs/features/11-onda-1-implementacao.md`. Continue a Onda 1 pelo **S4 (envio real)**:
+> `POST /api/conversations/:leadId/messages` e `/ai-reply` devem gravar `Message(PENDING)`, chamar
+> `sendText` e atualizar para `SENT` + `externalId` quando `EVOLUTION_ENABLED=true` e a instância estiver
+> `CONNECTED`, mantendo o comportamento atual quando a flag estiver desligada. **Atenção à corrida do
+> eco** descrita no S4 (o `MESSAGES_UPSERT` `fromMe` do próprio CRM pode chegar antes do `externalId`).
+> Sem alterar o schema. Use permissão ampliada para Prisma/build/push, mostre o diff antes de qualquer
+> mudança no banco e limpe os fixtures no fim. A API já está no ar na Vercel e o webhook do S3 já
+> recebe eventos.
 
 ---
 
@@ -301,3 +366,4 @@ Limpar depois: apagar o `Lead` de fixture (cascade em `Conversation`/`Message`) 
 | Data | Sessão | Entrega |
 |---|---|---|
 | 2026-11-18 | DSH | S1 (cliente Evolution) + S2 (rotas `/api/whatsapp`) + deploy da API na Vercel corrigido (envs + imports ESM) |
+| 2026-11-19 | DSH | S3 (webhook `POST /api/webhooks/evolution`): autenticação timing-safe, dedupe, Lead/Conversation/Message, intervenção humana por `fromMe`, status/QR da instância e ticks; validado com 15 casos local e em produção, fixtures limpos |
