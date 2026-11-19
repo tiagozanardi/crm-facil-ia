@@ -17,6 +17,7 @@
 | Schema Onda 1 | ✅ migrations `0_init` + `20261118153000_whatsapp_onda1` aplicadas |
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
+| API na Vercel | ✅ **200** em `/api/health` e `/api/whatsapp/instance` (envs + imports ESM corrigidos) |
 | Código da integração | 🟡 **S1 e S2 concluídos** (cliente + rotas `/api/whatsapp`); S3–S5 pendentes |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
@@ -127,6 +128,64 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 - `QRCODE_UPDATED` → cache do QR.
 - Sempre responder 200 rápido; processamento síncrono curto (Vercel 300s).
 
+#### Contrato dos eventos (Evolution v2) — **confirmar com payload real antes de fechar**
+
+```jsonc
+// MESSAGES_UPSERT — mensagem recebida (ou enviada, quando fromMe = true)
+{
+  "event": "messages.upsert",
+  "instance": "crm-malas-slz",
+  "data": {
+    "key": { "remoteJid": "5598988451290@s.whatsapp.net", "fromMe": false, "id": "3EB0C7E8F1234567" },
+    "pushName": "João Silva",
+    "message": { "conversation": "Oi, tem a mala rosa?" },   // ou { extendedTextMessage: { text } }
+    "messageType": "conversation",                          // "extendedTextMessage" quando tem contexto/quote
+    "messageTimestamp": 1735689600,
+    "status": "PENDING",
+    "instanceId": "…",
+    "source": "android"
+  }
+}
+
+// CONNECTION_UPDATE
+{ "event": "connection.update", "instance": "crm-malas-slz",
+  "data": { "instance": "crm-malas-slz", "state": "open" | "close" | "connecting", "statusReason": 200 } }
+
+// QRCODE_UPDATED
+{ "event": "qrcode.updated", "instance": "crm-malas-slz",
+  "data": { "qrcode": { "base64": "data:image/png;base64,…", "code": "2@…" } } }
+
+// MESSAGES_UPDATE — ticks de entrega/leitura (o `data` é ARRAY)
+{ "event": "messages.update", "instance": "crm-malas-slz",
+  "data": [{ "key": { "id": "3EB0…", "remoteJid": "5598…@s.whatsapp.net", "fromMe": true }, "status": "READ" }] }
+```
+
+Pontos de atenção: `data` pode vir como **array** em `messages.update`; o texto pode estar em
+`message.conversation` **ou** `message.extendedTextMessage.text`; `remoteJid` pode terminar em
+`@s.whatsapp.net` (pessoa) ou `@g.us` (grupo); `fromMe: true` é eco do próprio número (CRM **ou** celular).
+Fonte: documentação/DeepWiki e issues da Evolution — **não** validado com payload nosso ainda (falta chip).
+
+#### Plano de teste sem chip (a URL pública já responde)
+
+```powershell
+# 1. segredo recusado
+curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution -H "Content-Type: application/json" -d '{"event":"messages.upsert"}'
+# esperado: 401
+
+# 2. payload válido (troque o segredo pelo valor de EVOLUTION_WEBHOOK_SECRET no .env)
+curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
+  -H "Content-Type: application/json" -H "x-evolution-webhook-secret: $env:EVOLUTION_WEBHOOK_SECRET" `
+  -d '{"event":"messages.upsert","instance":"crm-malas-slz","data":{"key":{"remoteJid":"5598900000000@s.whatsapp.net","fromMe":false,"id":"FIXTURE-S3-001"},"pushName":"Teste S3","message":{"conversation":"teste do webhook"},"messageType":"conversation","messageTimestamp":1735689600}}'
+# esperado: 200 e Lead/Conversation/Message criados como CLIENT
+
+# 3. reenvio do MESMO id → 200 e nada duplicado
+# 4. fromMe:true → Message(AGENT) + IA pausada (pausedUntil no futuro)
+# 5. @g.us, status@broadcast e messageType de mídia → 200 ignorado
+# 6. CONNECTION_UPDATE state=open → WhatsAppInstance CONNECTED + lastSeenAt
+```
+
+Limpar depois: apagar o `Lead` de fixture (cascade em `Conversation`/`Message`) e os `DevLog` de teste.
+
 ### S4 — Envio real em `conversations.ts`
 - `POST /:leadId/messages` e `/ai-reply`: com `EVOLUTION_ENABLED=true` e instância `CONNECTED`,
   gravar `Message(PENDING)` → `sendText` → `SENT` + `externalId`; erro → `FAILED` + `error` + `DevLog`.
@@ -174,6 +233,16 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 - **Evolution v2.3.7**: `/manager` bloqueado no Caddy (404) de propósito; porta 8080 não publicada.
   A API key do `.env` é a nova (rotacionada) — **não** usar a chave antiga que apareceu em print.
 - **DNS**: `crm-evo-malas.duckdns.org` → `35.185.62.116`; cron do DuckDNS corrigido.
+- **Vercel + `"type": "module"` (armadilha que custou caro)**: a função `api/index.ts` é emitida como
+  **ESM** e ESM **não resolve import relativo sem extensão**. Resultado: `FUNCTION_INVOCATION_FAILED`
+  em **todas** as rotas, mesmo com o bundle completo. Todo import relativo de `server/**` e do entry
+  precisa de **`.js` explícito** (`./routes/health.js`, `../server/app.js`). `tsx` local resolve
+  `.js → .ts`, então `npm run server` continua igual.
+- **Vercel + env vars**: salvar variável **não** atualiza deployment existente — é obrigatório
+  **Redeploy** (Deployments → ⋯ → Redeploy). As 11 variáveis já estão em Production; bloco pronto em
+  `tmp/vercel-env.txt` (gitignored). Conferir com `GET /api/health` → 200 e `database: connected`.
+- **Diagnóstico de boot**: `api/index.ts` importa o app de forma dinâmica e, se falhar, registra o erro
+  no log da função em vez de morrer em silêncio. Se a API cair de novo, o log diz o motivo.
 
 ---
 
@@ -218,8 +287,17 @@ recuperável chamando de novo, mas o QR da criação perdido só volta pelo `/co
 
 > Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md` e
 > `docs/features/11-onda-1-implementacao.md`. Continue a Onda 1 pelo **S3 (webhook
-> `POST /api/webhooks/evolution`)**, sem alterar o schema (a tabela e os campos já existem).
-> `APP_PUBLIC_URL` já definida: `https://crm-facil-ia.vercel.app` — mas a API na Vercel está
-> devolvendo `500 FUNCTION_INVOCATION_FAILED`; conferir as variáveis de ambiente antes de testar o
-> webhook de ponta a ponta. Use permissão ampliada para Prisma/build/push e me mostre o diff antes de
-> qualquer mudança no banco.
+> `POST /api/webhooks/evolution`)**, sem alterar o schema (as tabelas e campos já existem).
+> A API já está no ar na Vercel (`/api/health` → 200, `/api/whatsapp/instance` → 200) e o webhook da
+> Evolution já aponta para `https://crm-facil-ia.vercel.app/api/webhooks/evolution` com o cabeçalho
+> `x-evolution-webhook-secret`. Use permissão ampliada para Prisma/build/push e me mostre o diff antes
+> de qualquer mudança no banco. Teste com fixtures via `curl` na URL pública (o plano está no S3) e
+> limpe os dados de fixture no fim.
+
+---
+
+## 9. Histórico de sessões
+
+| Data | Sessão | Entrega |
+|---|---|---|
+| 2026-11-18 | DSH | S1 (cliente Evolution) + S2 (rotas `/api/whatsapp`) + deploy da API na Vercel corrigido (envs + imports ESM) |
