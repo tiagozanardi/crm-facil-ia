@@ -271,10 +271,12 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 
 **Comportamento**
 
-- **Sem instância (`id === null`)**: valor + CTA "Criar conexão com WhatsApp" → `POST /instance`;
-  como o QR de `/instance` pode estar em cache/vencido, a tela **sempre** chama `POST /connect` quando o
-  status não é `CONNECTED` (o toast de sucesso aparece assim que a instância existe; o `/connect` roda
-  em seguida e atualiza o QR).
+- **Sem instância (`id === null`)**: o `CRMContext` **pré-provisiona em background** assim que o app
+  carrega — `POST /instance` (idempotente) e, se o QR do `/instance` faltar ou estiver vencido, `POST /connect`.
+  O card mostra "Preparando a conexão..." (sem clique) e, quando o QR fica pronto, ele aparece
+  automaticamente. O botão "Criar conexão com WhatsApp" fica para retry/caso o auto-preparo falhe; se
+  clicado durante o preparo, reaproveita a mesma promise. O QR recém-criado não é seguido de um
+  `/connect` redundante.
 - **CONNECTING**: QR grande (`<img src={qrCode}>`, data URI por proxy), instruções
   "WhatsApp > Aparelhos conectados > Conectar aparelho", horário de `qrUpdatedAt` + contagem de expiração.
   Polling de **5 s** no `GET /instance` **sem `?refresh=1`**, só com `document.visibilityState === 'visible'`;
@@ -302,17 +304,20 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
   header com badge âmbar e card com QR novo. Capturados em `tmp/s5-mobile.png` e `tmp/s5-desktop.png`
   (gitignored).
 - Fluxos exercitados no navegador contra o backend local + Evolution real: QR inicial; "Gerar novo QR"
-  (~3,9 s, toast + `qrUpdatedAt` novo); "Reiniciar" (~7,5 s no modo CONNECTING); estado sem instância
-  injetado por *mock* de GET → "Criar conexão" (POST idempotente real + `/connect`) em **~5,4 s** no fluxo
-  completo; "Desconectar" testado com **CONNECTED mockado** (D2: chip dedicado ainda não existe), com o
-  **POST real** de logout e transição para desconectado; "Reiniciar" a partir de desconectado voltou a
-  `CONNECTING` com QR em **~9,8 s**. Estado final conferido no backend: `CONNECTING`, QR novo,
-  `webhookWarning: null`. **Nenhum QR foi escaneado** e não houve alteração em `server/**` nem no schema.
-- **Meta de ≤2 s para "Criar conexão + QR"**: não foi atingida no ambiente local (3,8–5,4 s), porque o
-  `POST /api/whatsapp/instance` leva ~5 s (duas chamadas à Evolution: `findInstance` + `setWebhook`, além
-  do upsert). O frontend não acrescenta espera: o QR do `/instance` é exibido assim que essa resposta
-  chega e o `/connect` roda em seguida. Para bater 2 s seria preciso mexer no backend (não autorizado
-  nesta tarefa) ou na latência da Evolution.
+  (~3,9 s, toast + `qrUpdatedAt` novo); "Reiniciar" (~7,5 s no modo CONNECTING); **pré-provisionamento**
+  com o GET mockado sem instância — o contexto criou/preparou sozinho (sem clique) e, ao abrir
+  Configurações depois disso, o QR já estava visível em **201 ms**; abrindo a tela imediatamente, o
+  estado "Preparando a conexão..." apareceu em **73 ms** e o QR ficou pronto em **~11,2 s** desde o
+  reload (primeira preparação, com Evolution + pooler do Supabase); "Desconectar" testado com
+  **CONNECTED mockado** (D2: chip dedicado ainda não existe), com o **POST real** de logout e transição
+  para desconectado; "Reiniciar" a partir de desconectado voltou a `CONNECTING` com QR em **~9,8 s**.
+  Estado final conferido no backend: `CONNECTING`, QR novo, `webhookWarning: null`. **Nenhum QR foi
+  escaneado** e não houve alteração em `server/**` nem no schema.
+- **Meta de ≤2 s**: atingida no caminho normal **depois do pré-provisionamento** (Configurações → QR em
+  **201 ms**). A primeira preparação é em background e levou **~11,2 s** neste ambiente (create/QR da
+  Evolution + concorrência com a carga inicial do app); nesse intervalo a tela mostra "Preparando a
+  conexão...". O gargalo é a Evolution (`createInstance` com QR ~6,3 s; primeiro `connect` ~2,7 s), não o
+  frontend. O auto-preparo roda **sem clique** assim que o app carrega; o `POST /instance` é idempotente.
 
 ### S5b — Chat (pendente)
 - `ChatView`: polling de 5 s em `/api/conversations` (só com a aba visível) + refresh ao focar; ticks
@@ -405,8 +410,9 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 - [x] Tela **"Conexão WhatsApp"** em Configurações com status real, QR, criar/reiniciar/desconectar,
   aviso de webhook e de risco (S5a, validada sem escanear QR).
 - [x] Badge do Header reflete o status real (verde/âmbar/cinza) — S5a.
-- [ ] Criar conexão + exibir QR em **≤2 s** — S5a mediu **3,8–5,4 s** no ambiente local; o gargalo é o
-  `POST /api/whatsapp/instance` (~5 s, duas chamadas à Evolution), não o frontend.
+- [x] Criar conexão + exibir QR em **≤2 s** com a conexão **pré-provisionada** (Configurações → QR em
+  **201 ms**); a primeira preparação em background leva **~11,2 s** e aparece como "Preparando a conexão...".
+  O gargalo é a Evolution (~6,3 s para criar com QR + primeiro `connect` ~2,7 s), não o frontend.
 - [x] `DevLog` de `EVOLUTION_API` registra sucesso, falha e latência (validado no S3).
 - [x] `npm run build` e `tsc --noEmit` verdes.
 - [x] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.

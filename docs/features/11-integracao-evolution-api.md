@@ -460,9 +460,14 @@ community (gratuita).
 **O que foi entregue**
 
 - Card **"Conexão WhatsApp"** no topo da coluna esquerda de Configurações, com estados:
-  sem instância (CTA "Criar conexão com WhatsApp"), `CONNECTING` (QR grande + instruções + "Gerar novo QR"),
-  `CONNECTED` (número, última atividade, "Desconectar" com confirmação e "Reiniciar") e
-  `DISCONNECTED`/`ERROR` ("Tentar novamente" + "Reiniciar").
+  sem instância (pré-provisionamento automático em background; o CTA "Criar conexão com WhatsApp" fica
+  como retry), `CONNECTING` (QR grande + instruções + "Gerar novo QR"), `CONNECTED` (número, última
+  atividade, "Desconectar" com confirmação e "Reiniciar") e `DISCONNECTED`/`ERROR` ("Tentar novamente" +
+  "Reiniciar").
+- **Pré-provisionamento**: se o GET inicial da instância volta `id: null`, o `CRMContext` dispara
+  `POST /instance` (idempotente) + `/connect` (só se o QR faltar/estiver vencido) **sem clique**. O card
+  mostra "Preparando a conexão..."; quando o QR fica pronto, ele aparece automaticamente. Se o usuário
+  clicar durante o preparo, o botão reaproveita a mesma promise.
 - QR servido por proxy (`<img src={qrCode}>`, data URI) — a `EVOLUTION_API_KEY` nunca chega ao navegador.
 - Polling de **5 s** no `GET /api/whatsapp/instance` **somente com a aba visível** e sem `?refresh=1`
   (o refresh só ocorre ao abrir a tela e no botão "Atualizar"). O `ref` de concorrência impede GETs
@@ -485,7 +490,8 @@ community (gratuita).
 **Como testar manualmente**
 
 1. `npm run server` (porta 3001) e `npm run dev` (porta 3000); abrir `http://localhost:3000`.
-2. Ir em **Configurações** e conferir o card no topo da coluna esquerda e o badge do Header.
+2. Abrir **Configurações** e conferir o card no topo da coluna esquerda e o badge do Header. Se a instância
+   ainda não existir, o card mostra "Preparando a conexão..." e o QR aparece sozinho (pré-provisionamento).
 3. Com a instância em `CONNECTING`, usar "Gerar novo QR" (QR + toast + horário novos) e "Reiniciar"
    (sessão reinicia e volta a `CONNECTING`). Sem chip (D2), **não escanear** o QR do piloto.
 4. Para testar `CONNECTED` sem número real, mockar o `GET /api/whatsapp/instance` (ou usar o procedimento
@@ -495,15 +501,18 @@ community (gratuita).
 
 **Validação**: `npx tsc --noEmit` e `npm run build` verdes; prints em **390 px** e **1440 px** (sem overflow
 horizontal). Contra o backend local + Evolution real foram exercitados: QR inicial; "Gerar novo QR"
-(~3,9 s); "Reiniciar" (~7,5 s em `CONNECTING`); criação idempotente com estado sem instância injetado por
-mock (~5,4 s no fluxo completo); "Desconectar" com `CONNECTED` **mockado** (D2: ainda não há chip) e POST
-real de logout; "Reiniciar" a partir de desconectado voltou a `CONNECTING` com QR (~9,8 s). Estado final:
-`CONNECTING`, QR novo, `webhookWarning: null`. **Nenhum QR foi escaneado.**
+(~3,9 s); "Reiniciar" (~7,5 s em `CONNECTING`); **pré-provisionamento** com o GET mockado sem instância —
+o contexto criou/preparou sozinho (sem clique) e, ao abrir Configurações depois, o QR já estava visível em
+**201 ms**; abrindo a tela imediatamente, "Preparando a conexão..." apareceu em **73 ms** e o QR ficou
+pronto em **~11,2 s** desde o reload; "Desconectar" com `CONNECTED` **mockado** (D2: ainda não há chip) e
+POST real de logout; "Reiniciar" a partir de desconectado voltou a `CONNECTING` com QR (~9,8 s). Estado
+final: `CONNECTING`, QR novo, `webhookWarning: null`. **Nenhum QR foi escaneado.**
 
-**Limite conhecido**: o critério "criar conexão + QR em ≤2 s" não foi atingido no ambiente local
-(3,8–5,4 s). O gargalo é o `POST /api/whatsapp/instance` (~5 s, duas chamadas à Evolution), não o
-frontend: o QR do `/instance` é exibido assim que a resposta chega e o `/connect` roda em seguida.
-Para bater 2 s seria necessário mexer no backend, o que não fazia parte desta tarefa.
+**Meta de ≤2 s**: atingida no caminho normal **com a conexão já pré-provisionada** (Configurações → QR em
+**201 ms**). A **primeira** preparação é feita em background e levou **~11,2 s** neste ambiente
+(`createInstance` com QR ~6,3 s + primeiro `connect` ~2,7 s + concorrência com a carga inicial/DB); nesse
+intervalo o card mostra "Preparando a conexão...". O gargalo é a Evolution/VM, não o frontend; o
+pré-provisionamento resolve o clique, mas não acelera o primeiro QR físico.
 
 **Fora desta tarefa (S5b/S4)**: polling/ticks do chat e banner de desconectado no `ChatView`; envio real
 das mensagens (`EVOLUTION_ENABLED=true`).

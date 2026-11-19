@@ -32,6 +32,9 @@ import type {
   WhatsAppInstance,
 } from '../services/api';
 
+/** QR da Evolution expira em ~40s; preparar um novo com folga aos 30s. */
+const WHATSAPP_QR_RENEW_MS = 30_000;
+
 export type ViewType = 
   | 'dashboard' 
   | 'funnel' 
@@ -101,6 +104,8 @@ interface CRMContextType {
   whatsapp: WhatsAppInstance | null;
   whatsappLoading: boolean;
   whatsappError: string | null;
+  /** `true` enquanto a instância/QR está sendo preparado em background (sem clique). */
+  whatsappProvisioning: boolean;
   /**
    * Consulta o status da instância. `refresh: true` só na abertura da tela/botão
    * "Atualizar" (nunca no polling de 5s). `silent` evita toast em falha de background.
@@ -113,6 +118,11 @@ interface CRMContextType {
   connectWhatsApp: () => Promise<ConnectWhatsAppInstanceResult>;
   logoutWhatsApp: () => Promise<WhatsAppInstance>;
   restartWhatsApp: () => Promise<WhatsAppInstance>;
+  /**
+   * Cria a instância (idempotente) e garante um QR fresco. É o mesmo caminho usado
+   * pelo pré-provisionamento automático e pelo botão "Criar conexão".
+   */
+  provisionWhatsApp: () => Promise<WhatsAppInstance>;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -136,6 +146,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [whatsapp, setWhatsapp] = useState<WhatsAppInstance | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
+  const [whatsappProvisioning, setWhatsappProvisioning] = useState(false);
+  const whatsappProvisionRef = useRef<Promise<WhatsAppInstance> | null>(null);
+  const autoProvisionStartedRef = useRef(false);
   /** Evita dois GETs simultâneos do status (polling + abertura da tela/botão). */
   const whatsappRequestRef = useRef<{
     refresh: boolean;
@@ -320,6 +333,45 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return data;
   }, [applyWhatsAppAction]);
 
+  /**
+   * Cria a instância e garante um QR utilizável. O `POST /instance` já devolve o QR
+   * de uma instância recém-criada; só pedimos `/connect` quando ele falta ou venceu.
+   * Chamadas concorrentes compartilham a mesma promise (o botão e o auto-preparo).
+   */
+  const provisionWhatsApp = useCallback(async (): Promise<WhatsAppInstance> => {
+    if (whatsappProvisionRef.current) return whatsappProvisionRef.current;
+
+    const promise = (async () => {
+      setWhatsappError(null);
+      setWhatsappProvisioning(true);
+      try {
+        const created = await createWhatsApp();
+
+        const updatedAt = created.qrUpdatedAt ? new Date(created.qrUpdatedAt).getTime() : 0;
+        const age = updatedAt ? Date.now() - updatedAt : Number.POSITIVE_INFINITY;
+        if (
+          created.status !== 'CONNECTED' &&
+          (!created.qrCode || age > WHATSAPP_QR_RENEW_MS)
+        ) {
+          return await connectWhatsApp();
+        }
+
+        return created;
+      } finally {
+        setWhatsappProvisioning(false);
+      }
+    })();
+
+    whatsappProvisionRef.current = promise;
+    try {
+      return await promise;
+    } finally {
+      if (whatsappProvisionRef.current === promise) {
+        whatsappProvisionRef.current = null;
+      }
+    }
+  }, [connectWhatsApp, createWhatsApp]);
+
   // Status inicial para o Header (consulta barata, sem `?refresh=1`).
   useEffect(() => {
     void refreshWhatsApp({ silent: true });
@@ -340,6 +392,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.removeEventListener('visibilitychange', refreshOnReturn);
     };
   }, [refreshWhatsApp]);
+
+  // Pré-provisionamento: se a loja ainda não tem instância, cria + prepara o QR em
+  // background assim que o app carrega. A tela de Configurações abre com o QR pronto
+  // (ou com "Preparando conexão...") em vez de esperar o clique.
+  useEffect(() => {
+    if (whatsappLoading || !whatsapp || whatsapp.id !== null) return;
+    if (autoProvisionStartedRef.current) return;
+
+    autoProvisionStartedRef.current = true;
+    void provisionWhatsApp().catch(() => {
+      // O card de Configurações exibe o erro e oferece "Tentar novamente".
+    });
+  }, [whatsapp, whatsappLoading, provisionWhatsApp]);
 
   const updateLeadStage = (id: string, stage: LeadStage) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l));
@@ -718,11 +783,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       whatsapp,
       whatsappLoading,
       whatsappError,
+      whatsappProvisioning,
       refreshWhatsApp,
       createWhatsApp,
       connectWhatsApp,
       logoutWhatsApp,
-      restartWhatsApp
+      restartWhatsApp,
+      provisionWhatsApp
     }}>
       {children}
     </CRMContext.Provider>

@@ -124,11 +124,12 @@ export const WhatsAppConnectionCard: React.FC = () => {
     whatsapp,
     whatsappLoading,
     whatsappError,
+    whatsappProvisioning,
     refreshWhatsApp,
-    createWhatsApp,
     connectWhatsApp,
     logoutWhatsApp,
     restartWhatsApp,
+    provisionWhatsApp,
     addNotification,
   } = useCRM();
 
@@ -290,27 +291,19 @@ export const WhatsAppConnectionCard: React.FC = () => {
     setBusy('create');
     setErrorMessage(null);
     try {
-      const created = await createWhatsApp();
-      // Feedback assim que a instância existe: o QR que veio do `/instance` já pode
-      // ser exibido enquanto o `/connect` busca um QR novo (o cache pode estar vencido).
-      addNotification('Conexão criada! Escaneie o QR Code com o WhatsApp da loja.');
-
-      if (created.status === 'CONNECTED') return;
-      try {
-        await connectWhatsApp();
-      } catch (error) {
-        const message =
-          error instanceof Error && error.message
-            ? error.message
-            : 'A conexão foi criada, mas não foi possível gerar um QR Code novo.';
-        setErrorMessage(message);
-        addNotification(`⚠️ ${message}`);
-      }
+      // Se o pré-provisionamento já estiver em andamento, esta chamada reaproveita
+      // a mesma promise; quando o QR já está pronto, retorna na hora.
+      const prepared = await provisionWhatsApp();
+      addNotification(
+        prepared.status === 'CONNECTED'
+          ? '✅ WhatsApp conectado!'
+          : 'Conexão preparada! Escaneie o QR Code com o WhatsApp da loja.',
+      );
     } catch (error) {
       const message =
         error instanceof Error && error.message
           ? error.message
-          : 'Não foi possível criar a conexão com o WhatsApp.';
+          : 'Não foi possível preparar a conexão com o WhatsApp.';
       setErrorMessage(message);
       addNotification(`⚠️ ${message}`);
     } finally {
@@ -479,7 +472,32 @@ export const WhatsAppConnectionCard: React.FC = () => {
           <span className="text-xs">Consultando a conexão do WhatsApp...</span>
         </div>
       ) : !instance ? (
-        !whatsappError && (
+        whatsappProvisioning ? (
+          /* -------------------------------------------------------------- */
+          /* Pré-provisionando (sem clique)                                 */
+          /* -------------------------------------------------------------- */
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 py-1">
+            <div className="w-14 h-14 rounded-2xl bg-brand-50 border border-brand-100 flex items-center justify-center shrink-0">
+              <LoaderCircle className="w-7 h-7 animate-spin text-brand-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-graphite-900">Preparando a conexão...</p>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                Estamos criando a instância e gerando o QR Code em segundo plano. Na primeira vez
+                isso leva alguns segundos; quando ficar pronto, o QR aparece aqui automaticamente.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled
+              className={`${buttonBase} w-full sm:w-auto bg-brand-500/70 text-white shadow-xs shrink-0`}
+            >
+              <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+              Preparando conexão...
+            </button>
+          </div>
+        ) : (
+          !whatsappError && (
         /* ---------------------------------------------------------------- */
         /* Sem instância                                                     */
         /* ---------------------------------------------------------------- */
@@ -508,6 +526,7 @@ export const WhatsAppConnectionCard: React.FC = () => {
             {busy === 'create' ? 'Criando conexão...' : 'Criar conexão com WhatsApp'}
           </button>
         </div>
+          )
         )
       ) : isConnected ? (
         /* ---------------------------------------------------------------- */
