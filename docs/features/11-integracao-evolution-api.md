@@ -1,7 +1,7 @@
 # Feature Handoff: Integração Evolution API (WhatsApp real)
 - **Data**: 2026-11-19
 - **Agente / Plataforma**: DeepSeek Harness
-- **Status**: 🚧 **Parcial** — Onda 1 em andamento: infra + schema + S1 (cliente) + S2 (rotas da instância) + S3 (webhook) entregues; faltam S4 (envio real) e S5 (frontend)
+- **Status**: 🚧 **Parcial** — Onda 1 em andamento: infra + schema + S1 (cliente) + S2 (rotas da instância) + S3 (webhook) + S5a (tela de conexão/badge) entregues; faltam S4 (envio real) e S5b (polling/ticks do chat)
 
 > Este documento é o **plano** da Fase 11. Ele será atualizado para "Concluído/Parcial" conforme
 > cada onda for entregue, seguindo o template do `AGENTS.md`.
@@ -110,9 +110,11 @@ atualiza status; se o humano enviou, a pausa de 24h da IA é aplicada (regra já
       [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s3--webhook-serverrouteswebhooksts---concluído-em-2026-11-19).
 - [ ] `POST /api/conversations/:leadId/messages` e `/ai-reply` passam a **enviar** pelo WhatsApp
       (feature flag `EVOLUTION_ENABLED`, com fallback para o comportamento atual quando desligada).
-- [ ] Tela **"Conexão WhatsApp"** em Configurações: status (conectado/desconectado/aguardando QR),
+- [x] Tela **"Conexão WhatsApp"** em Configurações: status (conectado/desconectado/aguardando QR),
       QR Code, número conectado, botões Reconectar / Desconectar, última atualização.
-- [ ] Chat: polling de 5s enquanto a aba está visível + atualização ao focar a janela; ticks
+      **S5a concluído em 2026-11-19** — detalhes em
+      [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s5a--conexão-whatsapp-em-configurações----concluído-em-2026-11-19).
+- [ ] Chat (S5b): polling de 5s enquanto a aba está visível + atualização ao focar a janela; ticks
       enviando/enviado/entregue/lido/falhou; botão "reenviar" para `FAILED`; banner quando desconectado.
 - [ ] `GET /api/conversations?since=<iso>` para polling incremental (evita baixar tudo a cada 5s).
 
@@ -415,9 +417,10 @@ número do piloto.
    ver [`deploy/evolution/README.md`](../../deploy/evolution/README.md).
 2. 🤖 **Eu:** validar a Evolution por HTTPS (`scripts/check-evolution.ps1`) e implementar a Onda 1
    (schema + cliente + webhook + tela de conexão), testando com um número de teste.
-   **Feito até aqui**: schema, S1 (cliente), S2 (rotas `/api/whatsapp`) e S3 (webhook, validado em
-   produção em 2026-11-19). Próximo: S4 (envio real) e S5 (tela de conexão/polling).
-3. 🧑 **Você:** escaneia o QR quando a tela existir (D2, chip dedicado).
+   **Feito até aqui**: schema, S1 (cliente), S2 (rotas `/api/whatsapp`), S3 (webhook, validado em
+   produção em 2026-11-19) e S5a (tela de conexão + badge, validada em 390 px/1440 px). Próximo:
+   S4 (envio real) e S5b (polling/ticks do chat).
+3. 🧑 **Você:** escaneia o QR na tela de Configurações (D2, chip dedicado).
 4. Só então conectamos o número do piloto e ligamos a IA (`autoReplyEnabled`).
 
 **Continua em aberto (não bloqueia a infra):** D2 (chip dedicado), D3 (modo da IA) e D5 (escopo do MVP).
@@ -449,3 +452,58 @@ chave SSH sua para eu operar a VM diretamente.
 (RCE não autenticado) foi reportado. Como defesa extra, a porta 8080 não é publicada e o `/manager` é
 bloqueado no Caddy. Se um dia precisarmos da API oficial da Meta, subimos para 2.4.x e ativamos a licença
 community (gratuita).
+
+---
+
+## 17. S5a entregue — "Conexão WhatsApp" em Configurações (2026-11-19)
+
+**O que foi entregue**
+
+- Card **"Conexão WhatsApp"** no topo da coluna esquerda de Configurações, com estados:
+  sem instância (CTA "Criar conexão com WhatsApp"), `CONNECTING` (QR grande + instruções + "Gerar novo QR"),
+  `CONNECTED` (número, última atividade, "Desconectar" com confirmação e "Reiniciar") e
+  `DISCONNECTED`/`ERROR` ("Tentar novamente" + "Reiniciar").
+- QR servido por proxy (`<img src={qrCode}>`, data URI) — a `EVOLUTION_API_KEY` nunca chega ao navegador.
+- Polling de **5 s** no `GET /api/whatsapp/instance` **somente com a aba visível** e sem `?refresh=1`
+  (o refresh só ocorre ao abrir a tela e no botão "Atualizar"). O `ref` de concorrência impede GETs
+  simultâneos. Quando o QR some ou passa de **30 s**, a tela chama `POST /connect` de novo (a Evolution
+  expira o código em ~40 s), com cooldown de 15 s. QR vencido não é exibido: aparece o placeholder
+  "Renovando o QR Code...".
+- Aviso em destaque de `webhookWarning` (o QR conecta, mas as mensagens não chegam sem webhook), aviso de
+  `stale`/`refreshError` e nota de risco (número dedicado, API não oficial/Baileys, risco de banimento).
+- `evolution.enabled === false` é comunicado como "envio desligado (modo de teste)", sem bloquear a conexão.
+- Badge do **Header** com o status real (verde conectado / âmbar aguardando / cinza desconectado) e rótulos
+  curtos no mobile; clicar no badge abre Configurações. O mesmo estado do `CRMContext` alimenta Header e
+  card (sem polling duplicado); ao voltar para a aba, o contexto revalida o status.
+
+**Arquivos**: `src/services/api.ts` (tipos + 5 métodos com `ApiRequestError`), `src/context/CRMContext.tsx`
+(estado/ações compartilhados + dedupe/invalidação), `src/components/WhatsAppConnectionCard.tsx` (novo card),
+`src/views/SettingsView.tsx` (render no topo), `src/components/Header.tsx` (badge real) e `vite.config.ts`
+(ignora temporários no watcher para não derrubar o dev server com `EBUSY`). **Nenhuma alteração em
+`server/**` ou `prisma/schema.prisma`.**
+
+**Como testar manualmente**
+
+1. `npm run server` (porta 3001) e `npm run dev` (porta 3000); abrir `http://localhost:3000`.
+2. Ir em **Configurações** e conferir o card no topo da coluna esquerda e o badge do Header.
+3. Com a instância em `CONNECTING`, usar "Gerar novo QR" (QR + toast + horário novos) e "Reiniciar"
+   (sessão reinicia e volta a `CONNECTING`). Sem chip (D2), **não escanear** o QR do piloto.
+4. Para testar `CONNECTED` sem número real, mockar o `GET /api/whatsapp/instance` (ou usar o procedimento
+   do `tmp/s5-interactions.mjs`, gitignored) e conferir a confirmação de "Desconectar" — o POST de logout
+   é real; depois "Reiniciar" para deixar a instância em `CONNECTING`.
+5. No mobile (390 px), usar a aba **Ajustes**; conferir que o badge mostra o rótulo curto e não quebra o header.
+
+**Validação**: `npx tsc --noEmit` e `npm run build` verdes; prints em **390 px** e **1440 px** (sem overflow
+horizontal). Contra o backend local + Evolution real foram exercitados: QR inicial; "Gerar novo QR"
+(~3,9 s); "Reiniciar" (~7,5 s em `CONNECTING`); criação idempotente com estado sem instância injetado por
+mock (~5,4 s no fluxo completo); "Desconectar" com `CONNECTED` **mockado** (D2: ainda não há chip) e POST
+real de logout; "Reiniciar" a partir de desconectado voltou a `CONNECTING` com QR (~9,8 s). Estado final:
+`CONNECTING`, QR novo, `webhookWarning: null`. **Nenhum QR foi escaneado.**
+
+**Limite conhecido**: o critério "criar conexão + QR em ≤2 s" não foi atingido no ambiente local
+(3,8–5,4 s). O gargalo é o `POST /api/whatsapp/instance` (~5 s, duas chamadas à Evolution), não o
+frontend: o QR do `/instance` é exibido assim que a resposta chega e o `/connect` roda em seguida.
+Para bater 2 s seria necessário mexer no backend, o que não fazia parte desta tarefa.
+
+**Fora desta tarefa (S5b/S4)**: polling/ticks do chat e banner de desconectado no `ChatView`; envio real
+das mensagens (`EVOLUTION_ENABLED=true`).

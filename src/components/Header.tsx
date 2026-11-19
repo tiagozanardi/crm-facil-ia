@@ -23,10 +23,53 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     setDevMode, 
     setCurrentView, 
     leads, 
-    notification 
+    notification,
+    whatsapp,
+    whatsappLoading
   } = useCRM();
 
   const urgentCount = leads.filter(l => l.urgent).length;
+
+  // Status real da conexão (mesmo estado do card em Configurações → um polling só).
+  const whatsappBadge = whatsapp === null
+    ? whatsappLoading
+      ? {
+          label: 'Verificando WhatsApp...',
+          shortLabel: 'Verificando...',
+          dot: 'bg-gray-300 animate-pulse',
+          text: 'text-gray-500',
+          title: 'Consultando a conexão do WhatsApp',
+        }
+      : {
+          label: 'WhatsApp desconectado',
+          shortLabel: 'Desconectado',
+          dot: 'bg-gray-300',
+          text: 'text-gray-500',
+          title: 'WhatsApp desconectado — abrir Conexão WhatsApp',
+        }
+    : whatsapp.status === 'CONNECTED'
+      ? {
+          label: 'WhatsApp Conectado',
+          shortLabel: 'Conectado',
+          dot: 'bg-emerald-500 animate-pulse',
+          text: 'text-emerald-700',
+          title: 'WhatsApp conectado — abrir Conexão WhatsApp',
+        }
+      : whatsapp.status === 'CONNECTING'
+        ? {
+            label: 'Aguardando conexão',
+            shortLabel: 'Aguardando',
+            dot: 'bg-amber-500 animate-pulse',
+            text: 'text-amber-700',
+            title: 'Aguardando leitura do QR Code — abrir Conexão WhatsApp',
+          }
+        : {
+            label: 'WhatsApp desconectado',
+            shortLabel: 'Desconectado',
+            dot: 'bg-gray-300',
+            text: 'text-gray-500',
+            title: 'WhatsApp desconectado — abrir Conexão WhatsApp',
+          };
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-xs">
@@ -73,8 +116,23 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-[11px] font-medium text-emerald-700">WhatsApp Conectado</span>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setCurrentView('settings');
+                    }}
+                    className="group/status inline-flex items-center gap-1.5 whitespace-nowrap"
+                    title={whatsappBadge.title}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${whatsappBadge.dot}`}></span>
+                    <span
+                      className={`text-[11px] font-medium ${whatsappBadge.text} group-hover/status:underline`}
+                    >
+                      <span className="sm:hidden">{whatsappBadge.shortLabel}</span>
+                      <span className="hidden sm:inline">{whatsappBadge.label}</span>
+                    </span>
+                  </button>
                   <span className="text-gray-300">•</span>
                   <span className="text-[11px] text-gray-500 hidden md:inline">IA Ativa</span>
                 </div>

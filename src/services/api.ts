@@ -41,6 +41,55 @@ export interface SendMessageResult {
   sender: 'client' | 'ai' | 'agent';
 }
 
+/** Status da instância da loja na Evolution API (contrato do S2). */
+export type WhatsAppInstanceStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR';
+
+/** Diagnóstico sem segredo devolvido pela API (nunca inclui a API key). */
+export interface WhatsAppEvolutionInfo {
+  /** `EVOLUTION_ENABLED`: flag do ENVIO real. Não bloqueia conectar/exibir QR. */
+  enabled: boolean;
+  url: string | null;
+  instancePrefix: string;
+  hasApiKey: boolean;
+  hasWebhookSecret: boolean;
+  appPublicUrl: string | null;
+}
+
+/** Instância de WhatsApp da loja — `id === null` = nenhuma instância criada ainda. */
+export interface WhatsAppInstance {
+  id: string | null;
+  storeId: string;
+  storeSlug: string;
+  instanceName: string;
+  status: WhatsAppInstanceStatus;
+  connected: boolean;
+  /** Só dígitos com DDI (ex.: "5598988451290"). */
+  phoneNumber: string | null;
+  /** Data URI (`data:image/png;base64,...`) pronto para `<img src>`. */
+  qrCode: string | null;
+  qrUpdatedAt: string | null;
+  lastSeenAt: string | null;
+  webhookUrl: string | null;
+  webhookWarning: string | null;
+  evolution: WhatsAppEvolutionInfo;
+  /** `true` quando a última consulta com `?refresh=1` não alcançou a Evolution. */
+  stale?: boolean;
+  refreshError?: string;
+}
+
+/** Resposta de `POST /api/whatsapp/instance` (idempotente). */
+export interface CreateWhatsAppInstanceResult extends WhatsAppInstance {
+  action: 'created' | 'existing';
+  webhookConfigured: boolean;
+  webhookError?: string;
+}
+
+/** Resposta de `POST /api/whatsapp/instance/connect` (QR novo por proxy). */
+export interface ConnectWhatsAppInstanceResult extends WhatsAppInstance {
+  /** Alternativa ao QR Code, quando a Evolution devolve. */
+  pairingCode: string | null;
+}
+
 /** Erro de API com mensagem já amigável para exibir no toast do lojista. */
 export class ApiRequestError extends Error {
   status: number;
@@ -294,6 +343,49 @@ export const apiService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...(message ? { message } : {}), persist }),
     });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  // ----------------------------------------------------------------
+  // Conexão WhatsApp (Evolution API) — Fase 11 / Onda 1 / S2
+  // O frontend nunca fala com a Evolution: tudo passa por /api (QR por proxy).
+  // ----------------------------------------------------------------
+  /**
+   * Status da instância da loja. Use `refresh: true` somente ao abrir a tela ou no
+   * botão "Atualizar" — no polling de 5s a consulta deve ser a do cache (sem `?refresh=1`).
+   */
+  async getWhatsAppInstance(options: { refresh?: boolean } = {}): Promise<WhatsAppInstance> {
+    const suffix = options.refresh ? '?refresh=1' : '';
+    const res = await fetch(`${API_BASE}/whatsapp/instance${suffix}`);
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  /** Cria a instância da loja de forma idempotente e configura o webhook. */
+  async createWhatsAppInstance(): Promise<CreateWhatsAppInstanceResult> {
+    const res = await fetch(`${API_BASE}/whatsapp/instance`, { method: 'POST' });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  /** Gera um QR Code novo (o QR de `/instance` pode estar em cache/expirado). */
+  async connectWhatsAppInstance(): Promise<ConnectWhatsAppInstanceResult> {
+    const res = await fetch(`${API_BASE}/whatsapp/instance/connect`, { method: 'POST' });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  /** Desconecta o celular e limpa QR/número (a instância continua existindo). */
+  async logoutWhatsAppInstance(): Promise<WhatsAppInstance> {
+    const res = await fetch(`${API_BASE}/whatsapp/instance/logout`, { method: 'POST' });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  /** Reinicia a sessão na Evolution (volta para `CONNECTING` e limpa o QR). */
+  async restartWhatsAppInstance(): Promise<WhatsAppInstance> {
+    const res = await fetch(`${API_BASE}/whatsapp/instance/restart`, { method: 'POST' });
     if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
     return await res.json();
   },

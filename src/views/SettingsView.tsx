@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useCRM } from '../context/CRMContext';
+import { WhatsAppConnectionCard } from '../components/WhatsAppConnectionCard';
 import { 
   Settings, 
   Palette, 
@@ -142,6 +143,9 @@ export const SettingsView: React.FC = () => {
         {/* COLUNA ESQUERDA: DADOS DA LOJA & INTERVENÇÃO (7 Colunas) */}
         <div className="lg:col-span-7 space-y-5">
           
+          {/* Conexão WhatsApp (Fase 11 / Onda 1 / S5a) */}
+          <WhatsAppConnectionCard />
+
           {/* Dados do Negócio */}
           <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs space-y-4">
             <h3 className="text-xs font-bold text-graphite-900 flex items-center gap-2 pb-2 border-b border-gray-100">

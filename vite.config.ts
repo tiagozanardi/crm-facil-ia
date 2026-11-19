@@ -18,6 +18,9 @@ export default defineConfig({
         '**/tmp/**',
         '**/*.log',
         '**/*.tsbuildinfo',
+        // Arquivos temporários criados por editores/ferramentas durante o save.
+        '**/.*tmpdir/**',
+        '**/*.tmp',
       ],
     },
     proxy: {

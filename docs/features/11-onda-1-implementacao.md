@@ -1,6 +1,6 @@
 # Fase 11 — Onda 1: Brief de implementação (código)
 
-> **Status**: infraestrutura, schema e **S1–S3 prontos**; S4 (envio real) e S5 (frontend) pendentes.
+> **Status**: infraestrutura, schema, **S1–S3** e **S5a** prontos; S4 (envio real) e S5b (polling/ticks do chat) pendentes.
 > Este arquivo é o ponto de entrada para quem for implementar a Onda 1, sem precisar do histórico do
 > chat que montou a infra.
 > O plano completo/arquitetura está em [`11-integracao-evolution-api.md`](./11-integracao-evolution-api.md);
@@ -19,7 +19,7 @@
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
 | API na Vercel | ✅ **200** em `/api/health` e `/api/whatsapp/instance` (envs + imports ESM corrigidos) |
-| Código da integração | 🟡 **S1, S2 e S3 concluídos** (cliente + rotas `/api/whatsapp` + webhook); S4–S5 pendentes |
+| Código da integração | 🟡 **S1, S2, S3 e S5a concluídos** (cliente + rotas `/api/whatsapp` + webhook + tela de conexão); S4 e S5b pendentes |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
 `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL`.
@@ -251,9 +251,70 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
   O S4 deve gravar `PENDING` antes do envio e o webhook deve casar `fromMe` com uma mensagem `PENDING`
   recente (texto + janela curta) antes de tratar como intervenção humana.
 
-### S5 — Frontend
-- `src/services/api.ts`: `getWhatsAppInstance`, `createWhatsAppInstance`, `connectWhatsAppInstance`, `logoutWhatsAppInstance`.
-- `SettingsView`: seção **"Conexão WhatsApp"** (status, QR `<img src={base64}>`, botões Reconectar/Desconectar, aviso de risco).
+### S5a — Conexão WhatsApp em Configurações — ✅ **concluído em 2026-11-19**
+
+**Arquivos**
+
+- `src/services/api.ts`: tipos `WhatsAppInstance` / `WhatsAppInstanceStatus` / `WhatsAppEvolutionInfo`,
+  `CreateWhatsAppInstanceResult` e `ConnectWhatsAppInstanceResult`; métodos `getWhatsAppInstance`,
+  `createWhatsAppInstance`, `connectWhatsAppInstance`, `logoutWhatsAppInstance` e
+  `restartWhatsAppInstance` (todos com `ApiRequestError` + `parseError`, no padrão de `sendLeadMessage`).
+- `src/context/CRMContext.tsx`: estado compartilhado `whatsapp` / `whatsappLoading` / `whatsappError` e
+  ações `refreshWhatsApp`, `createWhatsApp`, `connectWhatsApp`, `logoutWhatsApp`, `restartWhatsApp`.
+  Um `ref` reutiliza o GET em andamento e um contador de requisição invalida respostas antigas depois de
+  uma ação. O `addNotification` ganhou timer único (toast novo substitui o anterior) e cleanup.
+- `src/components/WhatsAppConnectionCard.tsx` (novo): card completo de conexão.
+- `src/views/SettingsView.tsx`: card no topo da coluna esquerda.
+- `src/components/Header.tsx`: badge real no lugar do texto fixo "WhatsApp Conectado".
+- `vite.config.ts`: ignora `**/.*tmpdir/**` e `**/*.tmp` no watcher (evita o `EBUSY` que derrubou o Vite
+  quando o editor grava arquivos temporários dentro de `src/`).
+
+**Comportamento**
+
+- **Sem instância (`id === null`)**: valor + CTA "Criar conexão com WhatsApp" → `POST /instance`;
+  como o QR de `/instance` pode estar em cache/vencido, a tela **sempre** chama `POST /connect` quando o
+  status não é `CONNECTED` (o toast de sucesso aparece assim que a instância existe; o `/connect` roda
+  em seguida e atualiza o QR).
+- **CONNECTING**: QR grande (`<img src={qrCode}>`, data URI por proxy), instruções
+  "WhatsApp > Aparelhos conectados > Conectar aparelho", horário de `qrUpdatedAt` + contagem de expiração.
+  Polling de **5 s** no `GET /instance` **sem `?refresh=1`**, só com `document.visibilityState === 'visible'`;
+  voltar ao foco da aba dispara um tick imediato. `?refresh=1` é usado apenas no mount da tela e no botão
+  "Atualizar". Se o QR sumir ou passar de **30 s**, chama `/connect` de novo (cooldown de 15 s, `refs`
+  contra concorrência). QR vencido **não é exibido**: fica o placeholder "Renovando o QR Code...".
+- **CONNECTED**: número formatado (E.164 → `+55 (98) 98845-1290`), última atividade, "Reiniciar" e
+  "Desconectar" com confirmação inline (sem `window.confirm`).
+- **ERROR/DISCONNECTED com instância**: "Tentar novamente" (`/connect`) + "Reiniciar".
+- **`webhookWarning`**: bloco de destaque (sem webhook o QR conecta, mas as mensagens não chegam);
+  `stale`/`refreshError` aparecem como aviso com o último estado conhecido.
+- **Risco**: texto pequeno sobre número dedicado, API não oficial (Baileys) e risco de banimento.
+- **`evolution.enabled === false`**: informa que o **envio** está desligado (modo de teste), sem bloquear
+  conectar/exibir o QR.
+- Loading/disabled em todas as ações, toasts via `addNotification` e erros amigáveis inline.
+- **Header**: verde "WhatsApp Conectado", âmbar "Aguardando conexão", cinza "WhatsApp desconectado"
+  (no mobile, rótulos curtos "Conectado"/"Aguardando"/"Desconectado" para não quebrar a linha); clicar no
+  status abre Configurações. O mesmo estado do card é usado (sem polling duplicado); ao voltar para a aba,
+  o contexto revalida o status.
+
+**Validação (2026-11-19)**
+
+- `npx tsc --noEmit` e `npm run build` verdes (2112 módulos; bundle 406,70 kB / 112,73 kB gzip).
+- Prints em **390 px** (780×1800 @2x) e **1440 px**: sem overflow horizontal (`scrollWidth === clientWidth`),
+  header com badge âmbar e card com QR novo. Capturados em `tmp/s5-mobile.png` e `tmp/s5-desktop.png`
+  (gitignored).
+- Fluxos exercitados no navegador contra o backend local + Evolution real: QR inicial; "Gerar novo QR"
+  (~3,9 s, toast + `qrUpdatedAt` novo); "Reiniciar" (~7,5 s no modo CONNECTING); estado sem instância
+  injetado por *mock* de GET → "Criar conexão" (POST idempotente real + `/connect`) em **~5,4 s** no fluxo
+  completo; "Desconectar" testado com **CONNECTED mockado** (D2: chip dedicado ainda não existe), com o
+  **POST real** de logout e transição para desconectado; "Reiniciar" a partir de desconectado voltou a
+  `CONNECTING` com QR em **~9,8 s**. Estado final conferido no backend: `CONNECTING`, QR novo,
+  `webhookWarning: null`. **Nenhum QR foi escaneado** e não houve alteração em `server/**` nem no schema.
+- **Meta de ≤2 s para "Criar conexão + QR"**: não foi atingida no ambiente local (3,8–5,4 s), porque o
+  `POST /api/whatsapp/instance` leva ~5 s (duas chamadas à Evolution: `findInstance` + `setWebhook`, além
+  do upsert). O frontend não acrescenta espera: o QR do `/instance` é exibido assim que essa resposta
+  chega e o `/connect` roda em seguida. Para bater 2 s seria preciso mexer no backend (não autorizado
+  nesta tarefa) ou na latência da Evolution.
+
+### S5b — Chat (pendente)
 - `ChatView`: polling de 5 s em `/api/conversations` (só com a aba visível) + refresh ao focar; ticks
   `PENDING/SENT/DELIVERED/READ/FAILED`; banner quando desconectado.
 
@@ -341,6 +402,11 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 - [ ] Mensagem real do celular aparece no chat em ≤5 s (sem duplicar).
 - [ ] Resposta digitada no CRM chega no celular com tick de enviado.
 - [ ] `EVOLUTION_ENABLED=false` mantém o comportamento atual (demo) sem erro.
+- [x] Tela **"Conexão WhatsApp"** em Configurações com status real, QR, criar/reiniciar/desconectar,
+  aviso de webhook e de risco (S5a, validada sem escanear QR).
+- [x] Badge do Header reflete o status real (verde/âmbar/cinza) — S5a.
+- [ ] Criar conexão + exibir QR em **≤2 s** — S5a mediu **3,8–5,4 s** no ambiente local; o gargalo é o
+  `POST /api/whatsapp/instance` (~5 s, duas chamadas à Evolution), não o frontend.
 - [x] `DevLog` de `EVOLUTION_API` registra sucesso, falha e latência (validado no S3).
 - [x] `npm run build` e `tsc --noEmit` verdes.
 - [x] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.
@@ -355,6 +421,7 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 > `sendText` e atualizar para `SENT` + `externalId` quando `EVOLUTION_ENABLED=true` e a instância estiver
 > `CONNECTED`, mantendo o comportamento atual quando a flag estiver desligada. **Atenção à corrida do
 > eco** descrita no S4 (o `MESSAGES_UPSERT` `fromMe` do próprio CRM pode chegar antes do `externalId`).
+> Depois do S4, o **S5b** cobre o polling/ticks do chat (`ChatView`) e o banner de desconectado.
 > Sem alterar o schema. Use permissão ampliada para Prisma/build/push, mostre o diff antes de qualquer
 > mudança no banco e limpe os fixtures no fim. A API já está no ar na Vercel e o webhook do S3 já
 > recebe eventos.
@@ -367,3 +434,4 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 |---|---|---|
 | 2026-11-18 | DSH | S1 (cliente Evolution) + S2 (rotas `/api/whatsapp`) + deploy da API na Vercel corrigido (envs + imports ESM) |
 | 2026-11-19 | DSH | S3 (webhook `POST /api/webhooks/evolution`): autenticação timing-safe, dedupe, Lead/Conversation/Message, intervenção humana por `fromMe`, status/QR da instância e ticks; validado com 15 casos local e em produção, fixtures limpos |
+| 2026-11-19 | DSH | **S5a** (tela **Conexão WhatsApp** em Configurações + badge real no Header): tipos/métodos na API, estado compartilhado no `CRMContext`, polling 5 s só visível, renovação de QR aos 30 s, criar/conectar/desconectar/reiniciar, avisos de webhook/risco; `tsc`/`build` verdes e prints em 390 px/1440 px. Sem alterar `server/**` nem schema |

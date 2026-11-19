@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { 
   Lead, 
   LeadStage, 
@@ -25,7 +25,12 @@ import {
   initialProducts 
 } from '../mock/initialData';
 import { apiService } from '../services/api';
-import type { DevLogsResponse } from '../services/api';
+import type {
+  ConnectWhatsAppInstanceResult,
+  CreateWhatsAppInstanceResult,
+  DevLogsResponse,
+  WhatsAppInstance,
+} from '../services/api';
 
 export type ViewType = 
   | 'dashboard' 
@@ -90,6 +95,24 @@ interface CRMContextType {
   setDevMode: (active: boolean) => void;
   addNotification: (msg: string) => void;
   notification: string | null;
+
+  // Conexão WhatsApp (Fase 11 / Onda 1 / S5a) — estado compartilhado entre Header e Settings
+  /** `null` enquanto a primeira consulta não terminou. */
+  whatsapp: WhatsAppInstance | null;
+  whatsappLoading: boolean;
+  whatsappError: string | null;
+  /**
+   * Consulta o status da instância. `refresh: true` só na abertura da tela/botão
+   * "Atualizar" (nunca no polling de 5s). `silent` evita toast em falha de background.
+   */
+  refreshWhatsApp: (options?: {
+    refresh?: boolean;
+    silent?: boolean;
+  }) => Promise<WhatsAppInstance | null>;
+  createWhatsApp: () => Promise<CreateWhatsAppInstanceResult>;
+  connectWhatsApp: () => Promise<ConnectWhatsAppInstanceResult>;
+  logoutWhatsApp: () => Promise<WhatsAppInstance>;
+  restartWhatsApp: () => Promise<WhatsAppInstance>;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -108,6 +131,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [devLogSummary, setDevLogSummary] = useState<DevLogSummary | null>(null);
   const [devMode, setDevMode] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Conexão WhatsApp: estado compartilhado (Header + card de Configurações).
+  const [whatsapp, setWhatsapp] = useState<WhatsAppInstance | null>(null);
+  const [whatsappLoading, setWhatsappLoading] = useState(true);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
+  /** Evita dois GETs simultâneos do status (polling + abertura da tela/botão). */
+  const whatsappRequestRef = useRef<{
+    refresh: boolean;
+    promise: Promise<WhatsAppInstance>;
+  } | null>(null);
+  /** Invalida respostas antigas depois de uma ação (create/connect/logout/restart). */
+  const whatsappRequestIdRef = useRef(0);
+  const notificationTimerRef = useRef<number | null>(null);
 
   // Apply dynamic CSS brand variables when storeSettings.theme changes
   useEffect(() => {
@@ -187,12 +223,123 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  const addNotification = (msg: string) => {
+  const addNotification = useCallback((msg: string) => {
     setNotification(msg);
-    setTimeout(() => {
+    if (notificationTimerRef.current !== null) {
+      window.clearTimeout(notificationTimerRef.current);
+    }
+    notificationTimerRef.current = window.setTimeout(() => {
       setNotification(null);
+      notificationTimerRef.current = null;
     }, 3500);
-  };
+  }, []);
+
+  useEffect(() => () => {
+    if (notificationTimerRef.current !== null) {
+      window.clearTimeout(notificationTimerRef.current);
+    }
+  }, []);
+
+  // ----------------------------------------------------------------
+  // Conexão WhatsApp — funções compartilhadas
+  // ----------------------------------------------------------------
+
+  const refreshWhatsApp = useCallback(async (options: {
+    refresh?: boolean;
+    silent?: boolean;
+  } = {}): Promise<WhatsAppInstance | null> => {
+    const { refresh = false, silent = false } = options;
+    setWhatsappLoading(true);
+
+    // Reaproveita uma consulta em andamento: o polling e a abertura da tela não disparam
+    // dois GETs concorrentes. Uma consulta simples nunca "engole" um refresh explícito.
+    const current = whatsappRequestRef.current;
+    const entry =
+      current && (current.refresh || !refresh)
+        ? current
+        : { refresh, promise: apiService.getWhatsAppInstance({ refresh }) };
+    whatsappRequestRef.current = entry;
+    const pending = entry.promise;
+    const requestId = ++whatsappRequestIdRef.current;
+
+    try {
+      const data = await pending;
+      // Uma ação (create/connect/...) pode ter chegado antes: não sobrescreve o estado novo.
+      if (requestId === whatsappRequestIdRef.current) {
+        setWhatsapp(data);
+        setWhatsappError(null);
+      }
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Não foi possível consultar a conexão do WhatsApp.';
+      if (requestId === whatsappRequestIdRef.current) {
+        setWhatsappError(message);
+        if (!silent) addNotification(`⚠️ ${message}`);
+      }
+      return null;
+    } finally {
+      if (whatsappRequestRef.current?.promise === pending) {
+        whatsappRequestRef.current = null;
+      }
+      setWhatsappLoading(false);
+    }
+  }, [addNotification]);
+
+  /** Aplica o retorno de uma ação e invalida qualquer GET que tenha saído antes dela. */
+  const applyWhatsAppAction = useCallback((data: WhatsAppInstance) => {
+    whatsappRequestIdRef.current += 1;
+    whatsappRequestRef.current = null;
+    setWhatsapp(data);
+    setWhatsappError(null);
+  }, []);
+
+  const createWhatsApp = useCallback(async (): Promise<CreateWhatsAppInstanceResult> => {
+    const data = await apiService.createWhatsAppInstance();
+    applyWhatsAppAction(data);
+    return data;
+  }, [applyWhatsAppAction]);
+
+  const connectWhatsApp = useCallback(async (): Promise<ConnectWhatsAppInstanceResult> => {
+    const data = await apiService.connectWhatsAppInstance();
+    applyWhatsAppAction(data);
+    return data;
+  }, [applyWhatsAppAction]);
+
+  const logoutWhatsApp = useCallback(async (): Promise<WhatsAppInstance> => {
+    const data = await apiService.logoutWhatsAppInstance();
+    applyWhatsAppAction(data);
+    return data;
+  }, [applyWhatsAppAction]);
+
+  const restartWhatsApp = useCallback(async (): Promise<WhatsAppInstance> => {
+    const data = await apiService.restartWhatsAppInstance();
+    applyWhatsAppAction(data);
+    return data;
+  }, [applyWhatsAppAction]);
+
+  // Status inicial para o Header (consulta barata, sem `?refresh=1`).
+  useEffect(() => {
+    void refreshWhatsApp({ silent: true });
+  }, [refreshWhatsApp]);
+
+  // Ao voltar para a aba, confere o status de novo: o Header não fica congelado
+  // enquanto a tela de Configurações (que tem o polling de 5s) está fechada.
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshWhatsApp({ silent: true });
+      }
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
+  }, [refreshWhatsApp]);
 
   const updateLeadStage = (id: string, stage: LeadStage) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l));
@@ -567,7 +714,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       devMode,
       setDevMode,
       addNotification,
-      notification
+      notification,
+      whatsapp,
+      whatsappLoading,
+      whatsappError,
+      refreshWhatsApp,
+      createWhatsApp,
+      connectWhatsApp,
+      logoutWhatsApp,
+      restartWhatsApp
     }}>
       {children}
     </CRMContext.Provider>
