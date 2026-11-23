@@ -128,8 +128,11 @@ mensagens ficou preso em `SENT` (o chat nunca mostrava entregue/lido).
 **Tempo de intervenção humana:** alterado para **1 hora** na interface e confirmado no banco e na
 API (`interventionPauseHours = 1`, `updatedAt 2026-11-23T20:39:50Z`).
 
-**Ainda a confirmar no real:** os ticks `DELIVERED/READ` de uma mensagem nova e o teste de
-intervenção humana (responder pelo celular da loja → `fromMe` → IA pausada por 1h).
+**Validado no real (2026-11-23):** a intervenção humana pelo celular da loja funcionou (a IA pausou
+por 1h) e os horários passaram a aparecer no fuso da loja. **Ainda a confirmar:** os ticks
+`DELIVERED`/`READ` de uma resposta nova — depois do fix, os `MESSAGES_UPDATE` reais deixaram de cair
+em `missing-external-id`; o primeiro lote era de status de mensagens fora do CRM (grupos/histórico) e
+virou `unknown-message` (esperado).
 
 ---
 
@@ -166,7 +169,8 @@ do servidor. `.env.example` documenta a variável.
 
 **Validação:** teste rodando com `TZ=UTC` (simulando a Vercel) em `tmp/tz-test.ts` — `23:22Z` →
 `20:22`, pausa de +1h → “hoje 20:27”, data de +3 dias → `26/11 19:27`; 4 asserções verdes, `tsc` e
-`build` verdes. Conferido também na API de produção após o deploy.
+`build` verdes. Na API de produção após o deploy: `pausedUntil` → **“hoje 20:22”**, timestamps das
+mensagens → **17:34/19:22** e DevLog → **19:52**.
 
 > A pausa no banco nunca esteve errada: `pausedUntil` sempre foi o instante correto. O que estava
 > errado era só a **renderização** da data.
