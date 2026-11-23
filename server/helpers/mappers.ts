@@ -51,12 +51,30 @@ export function toClientSender(sender: MessageSender): 'client' | 'ai' | 'agent'
   return 'agent';
 }
 
-/** Formata datas do banco no padrão visual usado no chat (HH:mm). */
+/**
+ * Fuso usado em **toda** data que a API formata para o frontend.
+ *
+ * A Vercel roda as funções em UTC; sem isso, "pausada até 20:22" (São Paulo) virava "23:22" e
+ * os horários das mensagens/logs também apareciam 3h adiantados. A loja piloto fica em São Luís;
+ * pode ser sobrescrito por `APP_TIME_ZONE` quando houver lojas em outros fusos.
+ */
+export const APP_TIME_ZONE = (process.env.APP_TIME_ZONE ?? '').trim() || 'America/Sao_Paulo';
+
+/** Chave do dia (`YYYY-MM-DD`) **no fuso da loja**, para comparar hoje/ontem/amanhã. */
+function dayKey(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: APP_TIME_ZONE });
+}
+
+/** Formata datas do banco no padrão visual usado no chat (HH:mm) no fuso da loja. */
 export function formatTime(date: Date | string | null | undefined): string {
   if (!date) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 /** "10 min atrás", "2 h atrás", "Ontem 09:15" — usado na lista de contatos. */
@@ -72,12 +90,15 @@ export function formatRelative(date: Date | string | null | undefined): string {
   if (diffMin < 60) return `${diffMin} min atrás`;
   if (diffMin < 24 * 60) return `${Math.round(diffMin / 60)} h atrás`;
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) {
+  const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+  if (dayKey(d) === dayKey(yesterday)) {
     return `Ontem ${formatTime(d)}`;
   }
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 /** "hoje 20:18", "amanhã 09:00" — usado para exibir até quando a IA está pausada. */
@@ -88,14 +109,17 @@ export function formatPausedUntil(date: Date | string | null | undefined): strin
 
   if (d.getTime() <= Date.now()) return 'expirado';
 
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
 
-  if (d.toDateString() === today.toDateString()) return `hoje ${formatTime(d)}`;
-  if (d.toDateString() === tomorrow.toDateString()) return `amanhã ${formatTime(d)}`;
+  if (dayKey(d) === dayKey(now)) return `hoje ${formatTime(d)}`;
+  if (dayKey(d) === dayKey(tomorrow)) return `amanhã ${formatTime(d)}`;
 
-  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${formatTime(d)}`;
+  return `${d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: APP_TIME_ZONE,
+  })} ${formatTime(d)}`;
 }
 
 type LeadWithConversation = {

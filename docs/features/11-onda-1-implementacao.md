@@ -414,6 +414,10 @@ uma mensagem nova e a intervenção humana.
 - **Vercel + env vars**: salvar variável **não** atualiza deployment existente — é obrigatório
   **Redeploy** (Deployments → ⋯ → Redeploy). As 11 variáveis já estão em Production; bloco pronto em
   `tmp/vercel-env.txt` (gitignored). Conferir com `GET /api/health` → 200 e `database: connected`.
+- **Vercel roda em UTC (fuso)**: toda data exibida pela API deve usar `APP_TIME_ZONE` (padrão
+  `America/Sao_Paulo`), nunca o fuso do servidor. Sem isso, “IA pausada até 20:22” aparecia como
+  `23:22` e os horários das mensagens/logs ficavam 3h adiantados. Ver seção 7 do
+  [`13-s5b-chat-tempo-real.md`](./13-s5b-chat-tempo-real.md).
 - **Diagnóstico de boot**: `api/index.ts` importa o app de forma dinâmica e, se falhar, registra o erro
   no log da função em vez de morrer em silêncio. Se a API cair de novo, o log diz o motivo.
 

@@ -145,3 +145,28 @@ intervenção humana (responder pelo celular da loja → `fromMe` → IA pausada
    a conversa cresce fora da tela; som/notificação; contador de não lidas na lista. O polling e o
    merge já entregam os dados necessários.
 4. Atualizar o dicionário do banco **não** é necessário: esta fatia não alterou o schema.
+
+---
+
+## 7. Correção de fuso horário (2026-11-23)
+
+**Sintoma:** a intervenção humana foi gravada corretamente (pausa de 1h), mas o chat mostrava “IA em
+silêncio até **23h22**” quando eram **19h24** — deveria ser **20h22**.
+
+**Causa:** o banco grava UTC corretamente, mas a API formatava as datas com o fuso **do servidor**,
+e as funções da Vercel rodam em **UTC**. `formatPausedUntil`/`formatTime`/`formatRelative` e o
+`DevLog` usavam `toLocaleString` sem `timeZone`; o mesmo acontecia com os horários das mensagens,
+da lista de conversas e da base de conhecimento.
+
+**Correção:** `server/helpers/mappers.ts` exporta `APP_TIME_ZONE` (padrão **`America/Sao_Paulo`**,
+sobrescrevível por env) e todas as formatações passaram a usá-lo:
+`formatTime`, `formatRelative`, `formatPausedUntil`, `formatKnowledge` e `formatTimestamp` (Área Dev).
+O “hoje/ontem/amanhã” agora compara o **dia no fuso da loja** (`en-CA`/`APP_TIME_ZONE`), não no fuso
+do servidor. `.env.example` documenta a variável.
+
+**Validação:** teste rodando com `TZ=UTC` (simulando a Vercel) em `tmp/tz-test.ts` — `23:22Z` →
+`20:22`, pausa de +1h → “hoje 20:27”, data de +3 dias → `26/11 19:27`; 4 asserções verdes, `tsc` e
+`build` verdes. Conferido também na API de produção após o deploy.
+
+> A pausa no banco nunca esteve errada: `pausedUntil` sempre foi o instante correto. O que estava
+> errado era só a **renderização** da data.

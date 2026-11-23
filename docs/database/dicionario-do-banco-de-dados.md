@@ -44,7 +44,7 @@ São **11 tabelas** agrupadas em 5 domínios:
 | **Multi-tenant** | Toda tabela de negócio tem `storeId` com FK para `stores.id` e `ON DELETE CASCADE`. |
 | **Dinheiro** | `Decimal(10,2)` no banco (`numeric(10,2)` no Postgres). No código vira `number` por `Number(...)`. **Nunca use `float` para preço.** |
 | **Listas** | `text[]` no Postgres (`tags`, `colors`). No Prisma é `String[]`. A coluna aceita `NULL`, mas o app sempre grava `[]`. |
-| **Datas** | `timestamp without time zone`, gravadas em **UTC**. A API formata usando o fuso do servidor (hoje `America/Sao_Paulo`). `createdAt` tem default `CURRENT_TIMESTAMP`; `updatedAt` é mantido **pelo Prisma** (não tem default no banco). |
+| **Datas** | `timestamp without time zone`, gravadas em **UTC**. A API formata toda data exibida com o fuso de `APP_TIME_ZONE` (padrão `America/Sao_Paulo`), **independente do UTC da Vercel**. `createdAt` tem default `CURRENT_TIMESTAMP`; `updatedAt` é mantido **pelo Prisma** (não tem default no banco). |
 | **Enums** | Valores em MAIÚSCULO no banco (`ATENDIMENTO_IA`) e em minúsculo na API/frontend (`atendimento_ia`). A conversão é feita nos mappers do backend. |
 | **Exclusão** | Quase tudo é `CASCADE` a partir da loja. Produto e usuário têm "soft delete" via `active = false`; não apague produto que já apareceu em conversa sem pensar. |
 | **JSON** | `dev_logs.metadata` é `jsonb` livre — o formato depende de quem gerou o log (veja seção 5.11). |

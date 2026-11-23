@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { LogLevel, ServiceName } from '@prisma/client';
 import { prisma } from '../db.js';
 import { getDefaultStore } from '../helpers/tenant.js';
+import { APP_TIME_ZONE } from '../helpers/mappers.js';
 import { assertApiKeyConfigured, generateDevDiagnosis, MissingApiKeyError } from '../services/ai.js';
 
 export const devLogsRouter = Router();
@@ -43,12 +44,18 @@ const SERVICE_FROM_QUERY: Record<string, ServiceName> = {
 const COST_PER_INPUT_TOKEN = 0.15 / 1_000_000;
 const COST_PER_OUTPUT_TOKEN = 0.6 / 1_000_000;
 
+/** `YYYY-MM-DD HH:mm:ss` no fuso da loja (a Vercel roda em UTC). */
 function formatTimestamp(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  );
+  return date.toLocaleString('sv-SE', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 function formatDevLog(log: {

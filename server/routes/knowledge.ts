@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { KnowledgeSource } from '@prisma/client';
 import { prisma } from '../db.js';
 import { getDefaultStore } from '../helpers/tenant.js';
+import { APP_TIME_ZONE } from '../helpers/mappers.js';
 
 export const knowledgeRouter = Router();
 
@@ -23,6 +24,7 @@ function formatKnowledge(item: {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: APP_TIME_ZONE,
     }),
   };
 }
