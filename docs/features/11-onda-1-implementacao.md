@@ -1,7 +1,8 @@
 # Fase 11 — Onda 1: Brief de implementação (código)
 
-> **Status**: infraestrutura, schema, **S1–S4** e **S5a** prontos, além do **Modo Teste (Onda 1.5)**;
-> só o **S5b** (polling/ticks do chat) segue pendente.
+> **Status**: infraestrutura, schema e **S1–S4 + S5a + S5b** prontos, além do **Modo Teste (Onda 1.5)**.
+> A Onda 1 está completa no código; falta apenas a **validação com chip real** (conectar QR, enviar e
+> receber de verdade).
 > Este arquivo é o ponto de entrada para quem for implementar a Onda 1, sem precisar do histórico do
 > chat que montou a infra.
 > O plano completo/arquitetura está em [`11-integracao-evolution-api.md`](./11-integracao-evolution-api.md);
@@ -20,7 +21,7 @@
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
 | API na Vercel | ✅ **200** em `/api/health` e `/api/whatsapp/instance` (envs + imports ESM corrigidos) |
-| Código da integração | 🟢 **S1, S2, S3, S4 e S5a concluídos** + **Modo Teste (Onda 1.5)**; só **S5b** pendente |
+| Código da integração | 🟢 **S1–S4 + S5a + S5b concluídos** + **Modo Teste (Onda 1.5)**; falta a validação com chip |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
 `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL`.
@@ -342,9 +343,22 @@ o primeiro teste com chip deve confirmar a resposta no celular.
   conexão...". O gargalo é a Evolution (`createInstance` com QR ~6,3 s; primeiro `connect` ~2,7 s), não o
   frontend. O auto-preparo roda **sem clique** assim que o app carrega; o `POST /instance` é idempotente.
 
-### S5b — Chat (pendente)
-- `ChatView`: polling de 5 s em `/api/conversations` (só com a aba visível) + refresh ao focar; ticks
-  `PENDING/SENT/DELIVERED/READ/FAILED`; banner quando desconectado.
+### S5b — Chat em tempo real — ✅ **concluído em 2026-11-23**
+
+- `ChatView`: polling de **5 s** em `GET /api/conversations` somente com a aba visível, refresh
+  imediato ao abrir o chat e ao voltar o foco; ticks `PENDING/SENT/DELIVERED/READ/FAILED`; banner
+  âmbar (`CONNECTING`) ou vermelho (`DISCONNECTED/ERROR`) com atalho para Configurações; auto-scroll
+  no fim da conversa.
+- `CRMContext`: `refreshConversations` com dedupe de requisição e merge otimista; `sendMessage`
+  agora substitui a mensagem temporária pela mensagem real da API (`replaceMessage`).
+- `src/context/conversationMerge.ts`: funções puras de merge de conversas e leads (contatos novos
+  entram no topo; pausa/retomada da IA vinda do backend é espelhada).
+- O status da conexão é revalidado a cada ~30 s dentro do polling (sem consultar a Evolution), para
+  o banner refletir quedas/retomadas. Detalhes em
+  [`13-s5b-chat-tempo-real.md`](./13-s5b-chat-tempo-real.md).
+
+**Validação**: 17 asserções nas funções puras + 17 no E2E (`webhook → banco → GET → merge`), `tsc` e
+`build` verdes. Falta apenas ver os ticks físicos no celular (`DELIVERED`/`READ`) — depende do chip.
 
 ### S6 — Orquestração da IA (pode ser Onda 2)
 - `server/services/whatsappFlow.ts`: já existe a **primeira fatia** usada pelo Modo Teste
@@ -431,7 +445,7 @@ o primeiro teste com chip deve confirmar a resposta no celular.
 - [ ] Criar instância pelo CRM e conectar por QR.
 - [ ] Mensagem real do celular aparece no chat em ≤5 s (sem duplicar).
 - [ ] Resposta digitada no CRM chega no celular com tick de enviado.
-- [ ] `EVOLUTION_ENABLED=false` mantém o comportamento atual (demo) sem erro.
+- [x] `EVOLUTION_ENABLED=false` mantém o comportamento atual (demo) sem erro — validado: `201`, mensagem `SENT`, sem `delivery`/`externalId`.
 - [x] Tela **"Conexão WhatsApp"** em Configurações com status real, QR, criar/reiniciar/desconectar,
   aviso de webhook e de risco (S5a, validada sem escanear QR).
 - [x] Badge do Header reflete o status real (verde/âmbar/cinza) — S5a.
@@ -442,20 +456,26 @@ o primeiro teste com chip deve confirmar a resposta no celular.
 - [x] `npm run build` e `tsc --noEmit` verdes.
 - [x] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.
 
+> **Nota**: os três primeiros critérios (criar+conectar QR, mensagem em ≤5 s, resposta com tick)
+> estão **implementados** nos S1–S5b, mas só podem ser marcados depois do primeiro teste com o
+> chip físico. O Modo Teste + S4 + S5b fecham o código da Onda 1.
+
 ---
 
 ## 8. Prompt sugerido para o novo chat
 
-> Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md` e
-> `docs/features/11-onda-1-implementacao.md`. O **S4** e o **Modo Teste** já estão entregues (ver
-> [`12-modo-teste-e-envio-real.md`](./12-modo-teste-e-envio-real.md)). Continue a Onda 1 pelo **S5b**:
-> `ChatView` com polling de 5 s em `/api/conversations` (só com a aba visível), refresh ao focar,
-> ticks `PENDING/SENT/DELIVERED/READ/FAILED` (o campo `status` já vem na API) e banner quando o
-> WhatsApp estiver desconectado.
-> Sem alterar o schema. Use permissão ampliada para Prisma/build/push, mostre o diff antes de qualquer
-> mudança no banco e limpe os fixtures no fim. A API já está no ar na Vercel e o webhook já recebe
-> eventos; para testar envio de verdade é preciso `EVOLUTION_ENABLED=true` em Production + Redeploy e
-> o chip conectado.
+> Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md`,
+> `docs/features/11-onda-1-implementacao.md`, `docs/features/12-modo-teste-e-envio-real.md` e
+> `docs/features/13-s5b-chat-tempo-real.md`. A Onda 1 está **completa no código** (S1–S4 + S5a + S5b
+> + Modo Teste). As próximas frentes são:
+> 1. **Validação com chip real**: ligar `EVOLUTION_ENABLED=true` na Vercel (Production + Redeploy),
+>    conectar o QR, ativar o Modo Teste com um segundo celular e conferir mensagem → resposta → ticks
+>    (`DELIVERED`/`READ`) → intervenção humana pelo celular. Limpar fixtures e registrar o resultado
+>    no handoff.
+> 2. **Onda 2 / S6**: generalizar a auto-resposta no WhatsApp (`autoReplyEnabled`, `dailyReplyLimit`,
+>    janela de horário, fila em vez do webhook síncrono), reaproveitando `server/services/whatsappFlow.ts`.
+> Sem alterar o schema na validação. Use permissão ampliada para Prisma/build/push e limpe os fixtures
+> no fim. A API já está no ar na Vercel e o webhook já recebe eventos.
 
 ---
 
@@ -467,3 +487,4 @@ o primeiro teste com chip deve confirmar a resposta no celular.
 | 2026-11-19 | DSH | S3 (webhook `POST /api/webhooks/evolution`): autenticação timing-safe, dedupe, Lead/Conversation/Message, intervenção humana por `fromMe`, status/QR da instância e ticks; validado com 15 casos local e em produção, fixtures limpos |
 | 2026-11-19 | DSH | **S5a** (tela **Conexão WhatsApp** em Configurações + badge real no Header): tipos/métodos na API, estado compartilhado no `CRMContext`, polling 5 s só visível, renovação de QR aos 30 s, criar/conectar/desconectar/reiniciar, avisos de webhook/risco; `tsc`/`build` verdes e prints em 390 px/1440 px. Sem alterar `server/**` nem schema |
 | 2026-11-23 | DSH | **S4 + Modo Teste (Onda 1.5)**: envio real (`whatsappFlow.ts` com `PENDING`→`SENT/FAILED`, checagem de conexão com janela de confiança, adoção do eco `fromMe`), allowlist por loja (`Store.testModeEnabled/testModeNumbers` + migration + `GET/PUT /api/test-mode`), filtro total no webhook (sem Lead/Message/DevLog), auto-resposta só para números da lista (debounce cap 2 s), card **Modo Teste** + badge no Header, `delivery` no chat, `maxDuration: 60` na Vercel; 44 asserções locais e banco restaurado |
+| 2026-11-23 | DSH | **S5b** (chat em tempo real): polling de 5 s só com a aba visível + refresh ao focar, ticks `PENDING/SENT/DELIVERED/READ/FAILED` (com contorno em falha), banner âmbar/vermelho de conexão, auto-scroll, merge puro de conversas/leads (otimista, contato novo no topo, pausa da IA espelhada) e substituição da mensagem otimista pela real; 34 asserções locais, `tsc`/`build` verdes e banco restaurado |

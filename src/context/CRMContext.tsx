@@ -25,6 +25,7 @@ import {
   initialProducts 
 } from '../mock/initialData';
 import { apiService } from '../services/api';
+import { mergeConversations, mergeLeads } from './conversationMerge';
 import type {
   ConnectWhatsAppInstanceResult,
   CreateWhatsAppInstanceResult,
@@ -102,6 +103,11 @@ interface CRMContextType {
   selectedChatLeadId: string | null;
   setSelectedChatLeadId: (id: string | null) => void;
   sendMessage: (leadId: string, text: string, sender: 'client' | 'ai' | 'agent') => void;
+  /**
+   * Reconsulta `GET /api/conversations` e mescla no estado (S5b). Usado pelo polling de 5 s do
+   * chat, que só roda com a aba visível. `silent` evita toast em falha de background.
+   */
+  refreshConversations: (options?: { silent?: boolean }) => Promise<ChatConversation[] | null>;
   generateAIReplyForLead: (
     leadId: string,
     options?: { persist?: boolean },
@@ -209,6 +215,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /** Invalida respostas antigas depois de uma ação (create/connect/logout/restart). */
   const whatsappRequestIdRef = useRef(0);
   const notificationTimerRef = useRef<number | null>(null);
+  /** Evita dois GETs de conversas concorrentes (polling de 5 s + refresh ao focar). */
+  const conversationsRequestRef = useRef<Promise<ChatConversation[] | null> | null>(null);
 
   // Apply dynamic CSS brand variables when storeSettings.theme changes
   useEffect(() => {
@@ -537,11 +545,49 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lastInteraction: 'agora' } : l));
   };
 
+  /**
+   * Troca a mensagem otimista (id `msg-*`) pela versão persistida devolvida pela API.
+   * Se o polling já tiver trazido a mensagem real, só remove a otimista (sem duplicar).
+   */
+  const replaceMessage = (leadId: string, tempId: string, message: ChatMessage) => {
+    setConversations(prev => {
+      const conversation = prev[leadId];
+      if (!conversation) return prev;
+
+      const alreadyStored = conversation.messages.some(item => item.id === message.id);
+      const hasTemp = conversation.messages.some(item => item.id === tempId);
+      const withoutTemp = conversation.messages.filter(item => item.id !== tempId);
+
+      if (alreadyStored && !hasTemp) return prev;
+
+      // Troca no lugar quando a otimista ainda está na lista (preserva a ordem de envios rápidos).
+      const messages = alreadyStored
+        ? withoutTemp
+        : hasTemp
+          ? conversation.messages.map(item => (item.id === tempId ? message : item))
+          : [...conversation.messages, message];
+      const last = messages[messages.length - 1];
+
+      return {
+        ...prev,
+        [leadId]: {
+          ...conversation,
+          messages,
+          lastMessage: last?.text ?? conversation.lastMessage,
+          lastTime: last?.timestamp ?? conversation.lastTime
+        }
+      };
+    });
+  };
+
   const sendMessage = (leadId: string, text: string, sender: 'client' | 'ai' | 'agent') => {
+    // Sufixo aleatório evita colisão quando duas mensagens saem no mesmo milissegundo.
+    const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: tempId,
       sender,
       text,
+      status: 'SENT',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       delivered: true,
       read: true
@@ -552,7 +598,10 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Persiste no PostgreSQL (se o backend estiver offline, a UI continua funcionando)
     apiService
       .sendLeadMessage(leadId, text, sender)
-      .then((result) => notifyOutboundDelivery(result.delivery, addNotification))
+      .then((result) => {
+        replaceMessage(leadId, tempId, result.message);
+        notifyOutboundDelivery(result.delivery, addNotification);
+      })
       .catch(err => {
         console.warn('Falha ao persistir mensagem na API:', err);
       });
@@ -576,6 +625,43 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ]);
     }
   };
+
+  /**
+   * S5b: reconsulta as conversas e mescla no estado. Chamado pelo polling do `ChatView`
+   * (5 s, só com a aba visível) e ao voltar o foco para a aba.
+   */
+  const refreshConversations = useCallback(
+    async (options: { silent?: boolean } = {}): Promise<ChatConversation[] | null> => {
+      const { silent = true } = options;
+
+      // Reaproveita uma requisição em andamento: polling e foco não disparam dois GETs.
+      if (conversationsRequestRef.current) return conversationsRequestRef.current;
+
+      const request = apiService.getConversations();
+      conversationsRequestRef.current = request;
+
+      try {
+        const incoming = await request;
+        if (!incoming) {
+          if (!silent) addNotification('⚠️ Não foi possível atualizar as conversas.');
+          return null;
+        }
+
+        setConversations(prev => mergeConversations(prev, incoming));
+        setLeads(prev => mergeLeads(prev, incoming));
+        return incoming;
+      } catch (error) {
+        console.warn('Falha ao atualizar as conversas:', error);
+        if (!silent) addNotification('⚠️ Não foi possível atualizar as conversas.');
+        return null;
+      } finally {
+        if (conversationsRequestRef.current === request) {
+          conversationsRequestRef.current = null;
+        }
+      }
+    },
+    [addNotification],
+  );
 
   /**
    * Chama a IA com o histórico real da conversa (persistida no banco) e
@@ -844,6 +930,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedChatLeadId,
       setSelectedChatLeadId,
       sendMessage,
+      refreshConversations,
       generateAIReplyForLead,
       pauseAIForLead,
       resumeAIForLead,

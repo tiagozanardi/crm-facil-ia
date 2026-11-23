@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useCRM } from '../context/CRMContext';
-import { Product } from '../types';
+import { Product, ChatMessage } from '../types';
 import { 
   Search, 
   Send, 
@@ -11,6 +11,7 @@ import {
   Share2, 
   Zap, 
   AlertCircle, 
+  Check,
   CheckCheck, 
   BookOpen, 
   SlidersHorizontal,
@@ -19,8 +20,52 @@ import {
   ExternalLink,
   Plus,
   Package,
-  Loader2
+  Loader2,
+  WifiOff
 } from 'lucide-react';
+
+/** Polling do inbox (S5b): 5 s, somente com a aba visível. */
+const CHAT_POLL_INTERVAL_MS = 5_000;
+/** Distância (px) do fim considerada "colado no fim" para o auto-scroll. */
+const STICK_TO_BOTTOM_PX = 80;
+
+/** Ticks de entrega reais (S4/S5b) para mensagens da IA/atendente. */
+function renderMessageStatus(status?: ChatMessage['status']) {
+  switch (status) {
+    case 'PENDING':
+      return (
+        <span title="Enviando pelo WhatsApp..." aria-label="Enviando pelo WhatsApp">
+          <Clock className="w-3 h-3 opacity-70" />
+        </span>
+      );
+    case 'SENT':
+      return (
+        <span title="Enviado" aria-label="Enviado">
+          <Check className="w-3 h-3 opacity-80" />
+        </span>
+      );
+    case 'DELIVERED':
+      return (
+        <span title="Entregue" aria-label="Entregue">
+          <CheckCheck className="w-3 h-3 opacity-80" />
+        </span>
+      );
+    case 'READ':
+      return (
+        <span title="Lido" aria-label="Lido" className="text-sky-200">
+          <CheckCheck className="w-3 h-3" />
+        </span>
+      );
+    case 'FAILED':
+      return (
+        <span title="Falha ao enviar pelo WhatsApp" aria-label="Falha no envio" className="text-red-200">
+          <AlertCircle className="w-3 h-3" />
+        </span>
+      );
+    default:
+      return null;
+  }
+}
 
 export const ChatView: React.FC = () => {
   const { 
@@ -29,6 +74,7 @@ export const ChatView: React.FC = () => {
     selectedChatLeadId, 
     setSelectedChatLeadId, 
     sendMessage, 
+    refreshConversations,
     generateAIReplyForLead,
     pauseAIForLead, 
     resumeAIForLead, 
@@ -36,6 +82,9 @@ export const ChatView: React.FC = () => {
     quickReplies,
     products,
     storeSettings,
+    whatsapp,
+    refreshWhatsApp,
+    setCurrentView,
     addNotification
   } = useCRM();
 
@@ -54,6 +103,95 @@ export const ChatView: React.FC = () => {
 
   const activeLead = leads.find(l => l.id === selectedChatLeadId) || leads[0];
   const activeConversation = selectedChatLeadId ? conversations[selectedChatLeadId] : null;
+
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const activeMessageCount = activeConversation?.messages.length ?? 0;
+
+  // S5b: aviso no topo do chat quando o WhatsApp não está pronto (mensagens não entram/saem).
+  const whatsappBanner =
+    !whatsapp || whatsapp.status === 'CONNECTED'
+      ? null
+      : whatsapp.status === 'CONNECTING'
+        ? {
+            wrapper: 'bg-amber-50 border-amber-200 text-amber-800',
+            icon: 'text-amber-600',
+            title: 'WhatsApp aguardando conexão:',
+            text: ' escaneie o QR Code em Configurações para as mensagens chegarem.',
+          }
+        : {
+            wrapper: 'bg-red-50 border-red-200 text-red-800',
+            icon: 'text-red-600',
+            title: 'WhatsApp desconectado:',
+            text: ' as mensagens não chegam nem saem pelo CRM.',
+          };
+
+  // S5b: polling de 5 s em /api/conversations, somente com a aba visível.
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    let tickCount = 0;
+
+    const tick = async () => {
+      if (cancelled || document.visibilityState !== 'visible' || inFlight) return;
+      inFlight = true;
+      try {
+        await refreshConversations({ silent: true });
+
+        // A cada ~30 s revalida o status da conexão: o banner do topo reflete quedas/retomadas.
+        tickCount += 1;
+        if (tickCount % 6 === 0) {
+          void refreshWhatsApp({ silent: true });
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    // Primeira atualização ao abrir o chat (não espera os 5 s).
+    void tick();
+
+    const interval = window.setInterval(() => {
+      void tick();
+    }, CHAT_POLL_INTERVAL_MS);
+
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [refreshConversations, refreshWhatsApp]);
+
+  const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  };
+
+  // Mensagens novas (inclusive as que chegam pelo polling) acompanham o fim se o usuário já estava lá.
+  useEffect(() => {
+    if (stickToBottomRef.current) scrollMessagesToBottom('smooth');
+  }, [activeMessageCount]);
+
+  // Troca de conversa: começa sempre no fim, como no WhatsApp.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    scrollMessagesToBottom('auto');
+  }, [selectedChatLeadId]);
+
+  const handleMessagesScroll = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    stickToBottomRef.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < STICK_TO_BOTTOM_PX;
+  };
 
   const handleSendHumanMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -212,7 +350,7 @@ export const ChatView: React.FC = () => {
                   <span className="text-[11px] text-gray-500 font-medium">{activeLead.phone}</span>
                 </div>
                 <div className="text-[11px] text-brand-600 font-medium flex items-center gap-1.5">
-                  <span>{activeLead.interest}</span>
+                  <span>{activeLead.interest || 'Novo contato'}</span>
                   <span className="text-gray-300">•</span>
                   <span className="text-gray-500 font-semibold">R$ {activeLead.estimatedValue.toFixed(2)}</span>
                 </div>
@@ -258,6 +396,28 @@ export const ChatView: React.FC = () => {
             </div>
           </div>
 
+          {/* S5b: WhatsApp não conectado — as mensagens não entram nem saem */}
+          {whatsappBanner && (
+            <div
+              className={`border-b px-4 py-2 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${whatsappBanner.wrapper}`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <WifiOff className={`w-4 h-4 shrink-0 ${whatsappBanner.icon}`} />
+                <span>
+                  <strong>{whatsappBanner.title}</strong>
+                  {whatsappBanner.text}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentView('settings')}
+                className="shrink-0 text-xs font-bold underline hover:opacity-80 self-start sm:self-auto"
+              >
+                Abrir Conexão WhatsApp
+              </button>
+            </div>
+          )}
+
           {/* Banner de Aviso de Intervenção Ativa */}
           {activeLead.aiStatus === 'paused' && (
             <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800 flex items-center justify-between">
@@ -277,7 +437,11 @@ export const ChatView: React.FC = () => {
           )}
 
           {/* Área das Mensagens (Scroll) */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div
+            ref={messagesContainerRef}
+            onScroll={handleMessagesScroll}
+            className="flex-1 overflow-y-auto p-4 space-y-3"
+          >
             {activeConversation?.messages.map((msg) => {
               const isClient = msg.sender === 'client';
               const isAi = msg.sender === 'ai';
@@ -294,14 +458,17 @@ export const ChatView: React.FC = () => {
                       : isAi
                         ? 'bg-brand-500 text-white rounded-tr-none'
                         : 'bg-emerald-600 text-white rounded-tr-none'
-                  }`}>
+                  } ${msg.status === 'FAILED' ? 'ring-1 ring-red-300' : ''}`}>
                     {/* Badge do Remetente */}
                     <div className="flex items-center justify-between gap-3 text-[10px] opacity-80 mb-1 font-semibold">
                       <span className="flex items-center gap-1">
                         {isClient ? <User className="w-3 h-3" /> : isAi ? <Bot className="w-3 h-3" /> : <User className="w-3 h-3" />}
                         {isClient ? activeLead.name : isAi ? 'IA Malas SLZ' : 'Você (Atendente)'}
                       </span>
-                      <span>{msg.timestamp}</span>
+                      <span className="flex items-center gap-1">
+                        {msg.timestamp}
+                        {!isClient && renderMessageStatus(msg.status)}
+                      </span>
                     </div>
 
                     {/* Texto da Mensagem */}
