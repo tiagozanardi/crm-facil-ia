@@ -11,6 +11,7 @@ import { knowledgeRouter } from './routes/knowledge.js';
 import { quickRepliesRouter } from './routes/quickReplies.js';
 import { devLogsRouter } from './routes/devLogs.js';
 import { whatsappRouter } from './routes/whatsapp.js';
+import { testModeRouter } from './routes/testMode.js';
 import { webhooksRouter } from './routes/webhooks.js';
 
 export const app = express();
@@ -31,6 +32,7 @@ app.use('/api/knowledge', knowledgeRouter);
 app.use('/api/quick-replies', quickRepliesRouter);
 app.use('/api/dev-logs', devLogsRouter);
 app.use('/api/whatsapp', whatsappRouter);
+app.use('/api/test-mode', testModeRouter);
 app.use('/api/webhooks', webhooksRouter);
 
 // Fallback para rota não encontrada

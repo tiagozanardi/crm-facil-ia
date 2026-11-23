@@ -44,6 +44,11 @@ import {
 import { prisma } from '../db.js';
 import { maskPhone } from '../services/evolution.js';
 import { ensureConversationForLead, pauseAIForLead } from '../services/leadState.js';
+import { getTestModeConfig, isTestModeNumber } from '../services/testMode.js';
+import {
+  maybeAutoReplyToTestNumber,
+  tryAdoptOutboundEcho,
+} from '../services/whatsappFlow.js';
 
 export const webhooksRouter = Router();
 
@@ -376,12 +381,30 @@ interface EventOutcome {
   ignored: string[];
   /** Quantas mensagens `fromMe` pausaram a IA (intervenção humana pelo celular). */
   interventions: number;
+  /** Quantos `fromMe` eram o eco de um envio do próprio CRM (não pausam a IA). */
+  echoes: number;
+  /** Mensagens descartadas pelo Modo Teste (contato fora da lista). Não geram nenhum registro. */
+  testModeBlocked: number;
+  /** Respostas automáticas do Modo Teste efetivamente enviadas. */
+  autoReplies: number;
+  /** Motivos de respostas automáticas que não saíram (para o `DevLog` e a resposta JSON). */
+  autoReplySkips: string[];
   /** Diagnóstico de payload (nomes de campos, nunca conteúdo) para o próximo ajuste. */
   diagnostics: Record<string, unknown>[];
 }
 
 function emptyOutcome(): EventOutcome {
-  return { processed: 0, duplicates: 0, ignored: [], interventions: 0, diagnostics: [] };
+  return {
+    processed: 0,
+    duplicates: 0,
+    ignored: [],
+    interventions: 0,
+    echoes: 0,
+    testModeBlocked: 0,
+    autoReplies: 0,
+    autoReplySkips: [],
+    diagnostics: [],
+  };
 }
 
 interface ClientMessageInput {
@@ -397,6 +420,8 @@ interface ClientMessageResult {
   status: 'created' | 'duplicate';
   leadId?: string;
   conversationId?: string;
+  /** ID da `Message` recém-criada — usado como gatilho da auto-resposta do Modo Teste. */
+  messageId?: string;
 }
 
 /**
@@ -467,7 +492,7 @@ async function recordClientMessage(
         },
       });
 
-      await tx.message.create({
+      const created = await tx.message.create({
         data: {
           conversationId: conversation.id,
           sender: MessageSender.CLIENT,
@@ -478,9 +503,15 @@ async function recordClientMessage(
           read: false,
           createdAt: input.createdAt,
         },
+        select: { id: true },
       });
 
-      return { status: 'created' as const, leadId: lead.id, conversationId: conversation.id };
+      return {
+        status: 'created' as const,
+        leadId: lead.id,
+        conversationId: conversation.id,
+        messageId: created.id,
+      };
     });
   } catch (error) {
     // Corrida no unique de `externalId` (duplicata) ou em `(storeId, phoneE164)` (lead criado em
@@ -498,7 +529,8 @@ async function recordClientMessage(
 }
 
 interface AgentMessageResult {
-  status: 'recorded' | 'ignored';
+  /** `echo` = era o eco de um envio do próprio CRM (não é intervenção humana). */
+  status: 'recorded' | 'ignored' | 'echo';
   reason?: string;
 }
 
@@ -508,6 +540,10 @@ interface AgentMessageResult {
  *
  * A mensagem é gravada antes da pausa: perder o registro é pior do que uma pausa que falhou — e a
  * falha da pausa vira `DevLog ERROR` em vez de derrubar o webhook (o evento já está persistido).
+ *
+ * Antes de tratar como intervenção humana, tenta casar o evento com uma mensagem `PENDING`
+ * recente do CRM (mesmo texto): o envio do S4/auto-resposta pode ainda não ter gravado o
+ * `externalId` quando o eco chega. Ver `tryAdoptOutboundEcho`.
  */
 async function recordAgentMessage(input: ClientMessageInput): Promise<AgentMessageResult> {
   const lead = await prisma.lead.findUnique({
@@ -519,6 +555,13 @@ async function recordAgentMessage(input: ClientMessageInput): Promise<AgentMessa
   if (!lead) return { status: 'ignored', reason: 'fromme-unknown-contact' };
 
   const conversation = await ensureConversationForLead(lead.id);
+
+  const echo = await tryAdoptOutboundEcho({
+    conversationId: conversation.id,
+    externalId: input.externalId,
+    text: input.text,
+  });
+  if (echo.matched) return { status: 'echo' };
 
   await prisma.$transaction([
     prisma.message.create({
@@ -588,6 +631,10 @@ async function handleMessagesUpsert(
 ): Promise<EventOutcome> {
   const outcome = emptyOutcome();
 
+  // Modo Teste (Onda 1.5): uma consulta por evento. Quando ligado, só os números da lista
+  // entram no CRM — qualquer outro contato é descartado antes de qualquer escrita.
+  const testMode = await getTestModeConfig(instance.storeId);
+
   for (const item of toItems(data)) {
     try {
       const key = asRecord(item.key) ?? asRecord(asRecord(item.message)?.key);
@@ -614,6 +661,14 @@ async function handleMessagesUpsert(
       if (!jid.e164) {
         outcome.ignored.push('invalid-phone');
         outcome.diagnostics.push({ reason: 'invalid-phone', jid: describeJid(jid.raw) });
+        continue;
+      }
+
+      // Modo Teste ligado + contato fora da lista: descarta **sem gravar nada** (nem Lead,
+      // nem Message, nem DevLog). É o que permite conectar o número real sem a IA responder
+      // a contatos de verdade. O resumo do evento também é omitido quando só houve bloqueios.
+      if (testMode.enabled && !isTestModeNumber(testMode, jid.e164)) {
+        outcome.testModeBlocked += 1;
         continue;
       }
 
@@ -663,6 +718,12 @@ async function handleMessagesUpsert(
 
       if (fromMe) {
         const result = await recordAgentMessage(baseInput);
+        if (result.status === 'echo') {
+          // Era o eco do envio do próprio CRM (S4/auto-resposta): não é intervenção humana.
+          outcome.processed += 1;
+          outcome.echoes += 1;
+          continue;
+        }
         if (result.status === 'ignored') {
           outcome.ignored.push(result.reason ?? 'agent-ignored');
           continue;
@@ -678,6 +739,34 @@ async function handleMessagesUpsert(
         continue;
       }
       outcome.processed += 1;
+
+      // Modo Teste: respondemos automaticamente, mas **somente** porque o contato está na lista.
+      if (testMode.enabled && result.leadId && result.conversationId && result.messageId) {
+        try {
+          const reply = await maybeAutoReplyToTestNumber({
+            storeId: instance.storeId,
+            phoneE164: jid.e164,
+            leadId: result.leadId,
+            conversationId: result.conversationId,
+            triggerMessageId: result.messageId,
+            userMessage: text,
+          });
+          if (reply.sent) outcome.autoReplies += 1;
+          if (reply.skippedReason) outcome.autoReplySkips.push(reply.skippedReason);
+        } catch (error) {
+          // A mensagem já está registrada: falha de auto-resposta não derruba o webhook.
+          outcome.autoReplySkips.push('auto-reply-error');
+          await logWebhook({
+            storeId: instance.storeId,
+            level: 'ERROR',
+            message: `Modo teste · erro inesperado na auto-resposta: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            latencyMs: 0,
+            metadata: { leadId: result.leadId, origin: 'test-mode-auto-reply' },
+          });
+        }
+      }
     } catch (error) {
       // Banco fora do ar não é "payload estranho": sobe como 503 para a Evolution reentregar.
       if (isDatabaseUnavailable(error)) throw error;
@@ -834,6 +923,9 @@ function summarize(event: string, outcome: EventOutcome): string {
   if (outcome.duplicates > 0) parts.push(`${outcome.duplicates} duplicado(s)`);
   if (outcome.ignored.length > 0) parts.push(`${outcome.ignored.length} ignorado(s)`);
   if (outcome.interventions > 0) parts.push(`${outcome.interventions} intervenção(ões) humana(s)`);
+  if (outcome.echoes > 0) parts.push(`${outcome.echoes} eco(s) do CRM`);
+  if (outcome.autoReplies > 0) parts.push(`${outcome.autoReplies} resposta(s) automática(s)`);
+  if (outcome.testModeBlocked > 0) parts.push(`${outcome.testModeBlocked} bloqueado(s) pelo modo teste`);
   return `Webhook Evolution · ${event}: ${parts.join(', ')}.`;
 }
 
@@ -957,6 +1049,23 @@ webhooksRouter.post('/evolution', async (req, res) => {
       return res.status(200).json({ ok: true, event, ignored: ['unsupported-event'] });
     }
 
+    // Modo Teste: evento 100% bloqueado (contato fora da lista) não deixa **nenhum** rastro,
+    // nem no DevLog. A resposta JSON explica o motivo (sem telefone) para depuração por curl.
+    const onlyTestModeBlocked =
+      outcome.testModeBlocked > 0 && outcome.processed === 0 && outcome.duplicates === 0;
+
+    if (onlyTestModeBlocked) {
+      return res.status(200).json({
+        ok: true,
+        event,
+        instance: instance.instanceName,
+        processed: 0,
+        duplicates: 0,
+        ignored: ['test-mode'],
+        blockedByTestMode: outcome.testModeBlocked,
+      });
+    }
+
     await logWebhook({
       storeId: instance.storeId,
       level: outcome.processed > 0 || outcome.duplicates > 0 ? 'INFO' : 'WARN',
@@ -969,6 +1078,12 @@ webhooksRouter.post('/evolution', async (req, res) => {
         duplicates: outcome.duplicates,
         ignored: uniqueReasons(outcome),
         ...(outcome.interventions > 0 ? { interventions: outcome.interventions } : {}),
+        ...(outcome.echoes > 0 ? { echoes: outcome.echoes } : {}),
+        ...(outcome.autoReplies > 0 ? { autoReplies: outcome.autoReplies } : {}),
+        ...(outcome.autoReplySkips.length > 0
+          ? { autoReplySkips: [...new Set(outcome.autoReplySkips)].slice(0, 6) }
+          : {}),
+        ...(outcome.testModeBlocked > 0 ? { testModeBlocked: outcome.testModeBlocked } : {}),
         ...(outcome.diagnostics.length > 0 ? { diagnostics: outcome.diagnostics.slice(0, 3) } : {}),
       },
     });
@@ -981,6 +1096,12 @@ webhooksRouter.post('/evolution', async (req, res) => {
       duplicates: outcome.duplicates,
       ignored: uniqueReasons(outcome),
       ...(outcome.interventions > 0 ? { interventions: outcome.interventions } : {}),
+      ...(outcome.echoes > 0 ? { echoes: outcome.echoes } : {}),
+      ...(outcome.autoReplies > 0 ? { autoReplies: outcome.autoReplies } : {}),
+      ...(outcome.autoReplySkips.length > 0
+        ? { autoReplySkips: [...new Set(outcome.autoReplySkips)] }
+        : {}),
+      ...(outcome.testModeBlocked > 0 ? { testModeBlocked: outcome.testModeBlocked } : {}),
     });
   } catch (error) {
     return sendWebhookError(res, error, event, startedAt, instance.storeId);

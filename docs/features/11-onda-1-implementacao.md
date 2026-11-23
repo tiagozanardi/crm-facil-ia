@@ -1,6 +1,7 @@
 # Fase 11 — Onda 1: Brief de implementação (código)
 
-> **Status**: infraestrutura, schema, **S1–S3** e **S5a** prontos; S4 (envio real) e S5b (polling/ticks do chat) pendentes.
+> **Status**: infraestrutura, schema, **S1–S4** e **S5a** prontos, além do **Modo Teste (Onda 1.5)**;
+> só o **S5b** (polling/ticks do chat) segue pendente.
 > Este arquivo é o ponto de entrada para quem for implementar a Onda 1, sem precisar do histórico do
 > chat que montou a infra.
 > O plano completo/arquitetura está em [`11-integracao-evolution-api.md`](./11-integracao-evolution-api.md);
@@ -19,7 +20,7 @@
 | Backfill `Lead.phoneE164` | ✅ 5/5 (`npm run backfill:phones`) |
 | `npm run build` | ✅ verde |
 | API na Vercel | ✅ **200** em `/api/health` e `/api/whatsapp/instance` (envs + imports ESM corrigidos) |
-| Código da integração | 🟡 **S1, S2, S3 e S5a concluídos** (cliente + rotas `/api/whatsapp` + webhook + tela de conexão); S4 e S5b pendentes |
+| Código da integração | 🟢 **S1, S2, S3, S4 e S5a concluídos** + **Modo Teste (Onda 1.5)**; só **S5b** pendente |
 
 O `.env` local (gitignored) já tem `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` válidos, além de
 `DATABASE_URL`, `DIRECT_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL`.
@@ -242,14 +243,36 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 > shell e chega inválido (o body-parser responde HTML 400). Use arquivo (`--data-binary "@..."`) ou
 > `Invoke-RestMethod -Body` com `ConvertTo-Json`.
 
-### S4 — Envio real em `conversations.ts`
-- `POST /:leadId/messages` e `/ai-reply`: com `EVOLUTION_ENABLED=true` e instância `CONNECTED`,
-  gravar `Message(PENDING)` → `sendText` → `SENT` + `externalId`; erro → `FAILED` + `error` + `DevLog`.
-- Sem a flag, manter o comportamento atual (não quebrar a demo).
-- **Corrida do eco (atenção)**: o `MESSAGES_UPSERT` `fromMe` do próprio CRM pode chegar **antes** de o
-  S4 gravar o `externalId`; nessas condições o S3 gravaria um `AGENT` duplicado e pausaria a IA por 24h.
-  O S4 deve gravar `PENDING` antes do envio e o webhook deve casar `fromMe` com uma mensagem `PENDING`
-  recente (texto + janela curta) antes de tratar como intervenção humana.
+### S4 — Envio real em `conversations.ts` — ✅ **concluído em 2026-11-23**
+
+Implementado em `server/services/whatsappFlow.ts` (`deliverOutboundMessage`) e usado por
+`POST /:leadId/messages` e `/ai-reply`:
+
+- com `EVOLUTION_ENABLED=true` e número E.164 no lead, a `Message` nasce **`PENDING`**, o
+  `sendText` é chamado com o **número mascarado** no log e a mensagem vira **`SENT` + `externalId`**
+  (ou **`FAILED` + `error`**, com `delivered=false`);
+- a conexão é conferida antes: estado `CONNECTED` recente no banco é confiável por **2 min**; fora
+  disso, `connectionState` ao vivo (o S1 mostrou que `sendText` numa sessão caída espera até o
+  timeout de 15 s);
+- sem a flag (ou sem `phoneE164`) o comportamento de demo continua: nada sai e a mensagem fica
+  `SENT`/`delivered=true`;
+- a resposta da API ganhou `delivery: { attempted, status, reason?, externalId?, error? }` e o
+  frontend mostra toast quando a mensagem fica registrada mas **não** sai;
+- **corrida do eco resolvida**: `tryAdoptOutboundEcho` casa o `MESSAGES_UPSERT` `fromMe` com a
+  `Message(PENDING)` recente (mesmo texto, janela de 3 min), grava o `externalId` nela e **não
+  pausa a IA** nem cria `AGENT` duplicado. `fromMe` sem eco pendente continua sendo intervenção
+  humana (pausa de 24h).
+
+**Modo Teste (Onda 1.5)**: como o envio precisava existir para a IA "responder apenas ao número de
+teste", a mesma sessão entregou a allowlist por loja (`Store.testModeEnabled/testModeNumbers`),
+o filtro total no webhook e a auto-resposta. Detalhes em
+[`12-modo-teste-e-envio-real.md`](./12-modo-teste-e-envio-real.md).
+
+**Validação**: `tsc` (frontend/backend) + `npm run build` verdes; **36 asserções** de E2E local
+(filtro sem rastro, dedupe, eco, intervenção humana, API do modo teste) e **7 asserções** do caminho
+de envio (recusa em ~3 s sem esperar o timeout; `whatsapp-connecting` sem chamar a OpenAI). **O
+envio físico ainda não foi testado** — não há chip conectado (`crm-malas-slz` em `CONNECTING`);
+o primeiro teste com chip deve confirmar a resposta no celular.
 
 ### S5a — Conexão WhatsApp em Configurações — ✅ **concluído em 2026-11-19**
 
@@ -324,9 +347,11 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
   `PENDING/SENT/DELIVERED/READ/FAILED`; banner quando desconectado.
 
 ### S6 — Orquestração da IA (pode ser Onda 2)
-- `server/services/whatsappFlow.ts`: `autoReplyEnabled`, debounce (`replyDelaySeconds`), reler a última
-  mensagem do cliente antes de responder, `dailyReplyLimit`, janela de horário e kill switch.
-- Sem `autoReplyEnabled`, o webhook só grava (não responde).
+- `server/services/whatsappFlow.ts`: já existe a **primeira fatia** usada pelo Modo Teste
+  (`maybeAutoReplyToTestNumber`): debounce capado em 2 s, releitura da última mensagem, pausa da IA
+  e envio com `PENDING`→`SENT/FAILED`. Falta generalizar: `autoReplyEnabled`, `dailyReplyLimit`,
+  janela de horário, kill switch e mover a espera para uma fila (o webhook hoje é síncrono).
+- Sem `autoReplyEnabled` (ou fora do modo teste), o webhook só grava (não responde).
 
 ### S7 — Validação
 - `npm run build` + `tsc --noEmit`.
@@ -422,15 +447,15 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 ## 8. Prompt sugerido para o novo chat
 
 > Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md` e
-> `docs/features/11-onda-1-implementacao.md`. Continue a Onda 1 pelo **S4 (envio real)**:
-> `POST /api/conversations/:leadId/messages` e `/ai-reply` devem gravar `Message(PENDING)`, chamar
-> `sendText` e atualizar para `SENT` + `externalId` quando `EVOLUTION_ENABLED=true` e a instância estiver
-> `CONNECTED`, mantendo o comportamento atual quando a flag estiver desligada. **Atenção à corrida do
-> eco** descrita no S4 (o `MESSAGES_UPSERT` `fromMe` do próprio CRM pode chegar antes do `externalId`).
-> Depois do S4, o **S5b** cobre o polling/ticks do chat (`ChatView`) e o banner de desconectado.
+> `docs/features/11-onda-1-implementacao.md`. O **S4** e o **Modo Teste** já estão entregues (ver
+> [`12-modo-teste-e-envio-real.md`](./12-modo-teste-e-envio-real.md)). Continue a Onda 1 pelo **S5b**:
+> `ChatView` com polling de 5 s em `/api/conversations` (só com a aba visível), refresh ao focar,
+> ticks `PENDING/SENT/DELIVERED/READ/FAILED` (o campo `status` já vem na API) e banner quando o
+> WhatsApp estiver desconectado.
 > Sem alterar o schema. Use permissão ampliada para Prisma/build/push, mostre o diff antes de qualquer
-> mudança no banco e limpe os fixtures no fim. A API já está no ar na Vercel e o webhook do S3 já
-> recebe eventos.
+> mudança no banco e limpe os fixtures no fim. A API já está no ar na Vercel e o webhook já recebe
+> eventos; para testar envio de verdade é preciso `EVOLUTION_ENABLED=true` em Production + Redeploy e
+> o chip conectado.
 
 ---
 
@@ -441,3 +466,4 @@ curl.exe -i -X POST https://crm-facil-ia.vercel.app/api/webhooks/evolution `
 | 2026-11-18 | DSH | S1 (cliente Evolution) + S2 (rotas `/api/whatsapp`) + deploy da API na Vercel corrigido (envs + imports ESM) |
 | 2026-11-19 | DSH | S3 (webhook `POST /api/webhooks/evolution`): autenticação timing-safe, dedupe, Lead/Conversation/Message, intervenção humana por `fromMe`, status/QR da instância e ticks; validado com 15 casos local e em produção, fixtures limpos |
 | 2026-11-19 | DSH | **S5a** (tela **Conexão WhatsApp** em Configurações + badge real no Header): tipos/métodos na API, estado compartilhado no `CRMContext`, polling 5 s só visível, renovação de QR aos 30 s, criar/conectar/desconectar/reiniciar, avisos de webhook/risco; `tsc`/`build` verdes e prints em 390 px/1440 px. Sem alterar `server/**` nem schema |
+| 2026-11-23 | DSH | **S4 + Modo Teste (Onda 1.5)**: envio real (`whatsappFlow.ts` com `PENDING`→`SENT/FAILED`, checagem de conexão com janela de confiança, adoção do eco `fromMe`), allowlist por loja (`Store.testModeEnabled/testModeNumbers` + migration + `GET/PUT /api/test-mode`), filtro total no webhook (sem Lead/Message/DevLog), auto-resposta só para números da lista (debounce cap 2 s), card **Modo Teste** + badge no Header, `delivery` no chat, `maxDuration: 60` na Vercel; 43 asserções locais e banco restaurado |

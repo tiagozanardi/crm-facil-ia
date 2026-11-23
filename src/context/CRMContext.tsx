@@ -29,11 +29,51 @@ import type {
   ConnectWhatsAppInstanceResult,
   CreateWhatsAppInstanceResult,
   DevLogsResponse,
+  OutboundDelivery,
+  TestModeConfig,
   WhatsAppInstance,
 } from '../services/api';
 
 /** QR da Evolution expira em ~40s; preparar um novo com folga aos 30s. */
 const WHATSAPP_QR_RENEW_MS = 30_000;
+
+/**
+ * Avisa o lojista quando a mensagem foi registrada mas não saiu pelo WhatsApp (S4).
+ * Sem `EVOLUTION_ENABLED`, o envio é "SKIPPED: sending-disabled" e isso é o comportamento
+ * normal de demonstração — não vira alerta.
+ */
+function notifyOutboundDelivery(
+  delivery: OutboundDelivery | undefined,
+  notify: (message: string) => void,
+): void {
+  if (!delivery) return;
+
+  if (delivery.status === 'FAILED') {
+    notify(
+      `⚠️ O WhatsApp não enviou a mensagem${delivery.error ? `: ${delivery.error}` : '.'}`,
+    );
+    return;
+  }
+
+  if (delivery.status !== 'SKIPPED' || !delivery.reason || delivery.reason === 'sending-disabled') {
+    return;
+  }
+
+  const reasons: Record<string, string> = {
+    'no-phone': 'o lead não tem número E.164 cadastrado',
+    'whatsapp-disconnected': 'o WhatsApp está desconectado',
+    'whatsapp-connecting': 'o WhatsApp ainda está conectando',
+    'whatsapp-error': 'a conexão do WhatsApp está com erro',
+    'whatsapp-missing': 'não há conexão de WhatsApp criada',
+    'evolution-unreachable': 'a Evolution API não respondeu',
+    'evolution-close': 'a sessão do WhatsApp caiu',
+    'evolution-connecting': 'o WhatsApp está reconectando',
+    'evolution-unknown': 'o estado do WhatsApp é desconhecido',
+  };
+
+  const label = reasons[delivery.reason];
+  if (label) notify(`⚠️ Mensagem registrada, mas não enviada — ${label}.`);
+}
 
 export type ViewType = 
   | 'dashboard' 
@@ -123,6 +163,14 @@ interface CRMContextType {
    * pelo pré-provisionamento automático e pelo botão "Criar conexão".
    */
   provisionWhatsApp: () => Promise<WhatsAppInstance>;
+
+  // Modo Teste (Fase 11 / Onda 1.5) — allowlist de números por loja
+  /** `null` enquanto a primeira consulta não terminou. */
+  testMode: TestModeConfig | null;
+  testModeLoading: boolean;
+  refreshTestMode: () => Promise<TestModeConfig | null>;
+  /** Salva a allowlist; lança erro com mensagem amigável quando o servidor recusa. */
+  saveTestMode: (input: { enabled: boolean; numbers: string[] }) => Promise<TestModeConfig>;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -147,6 +195,10 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [whatsappLoading, setWhatsappLoading] = useState(true);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
   const [whatsappProvisioning, setWhatsappProvisioning] = useState(false);
+
+  // Modo Teste (Onda 1.5): allowlist de números por loja.
+  const [testMode, setTestMode] = useState<TestModeConfig | null>(null);
+  const [testModeLoading, setTestModeLoading] = useState(true);
   const whatsappProvisionRef = useRef<Promise<WhatsAppInstance> | null>(null);
   const autoProvisionStartedRef = useRef(false);
   /** Evita dois GETs simultâneos do status (polling + abertura da tela/botão). */
@@ -377,6 +429,34 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void refreshWhatsApp({ silent: true });
   }, [refreshWhatsApp]);
 
+  // Modo Teste: consulta única no carregamento; o card de Configurações reaproveita o estado.
+  const refreshTestMode = useCallback(async (): Promise<TestModeConfig | null> => {
+    setTestModeLoading(true);
+    try {
+      const data = await apiService.getTestMode();
+      setTestMode(data);
+      return data;
+    } catch (error) {
+      console.warn('Falha ao consultar o modo teste:', error);
+      return null;
+    } finally {
+      setTestModeLoading(false);
+    }
+  }, []);
+
+  const saveTestMode = useCallback(
+    async (input: { enabled: boolean; numbers: string[] }): Promise<TestModeConfig> => {
+      const data = await apiService.updateTestMode(input);
+      setTestMode(data);
+      return data;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void refreshTestMode();
+  }, [refreshTestMode]);
+
   // Ao voltar para a aba, confere o status de novo: o Header não fica congelado
   // enquanto a tela de Configurações (que tem o polling de 5s) está fechada.
   useEffect(() => {
@@ -470,9 +550,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     appendMessage(leadId, newMsg);
 
     // Persiste no PostgreSQL (se o backend estiver offline, a UI continua funcionando)
-    apiService.sendLeadMessage(leadId, text, sender).catch(err => {
-      console.warn('Falha ao persistir mensagem na API:', err);
-    });
+    apiService
+      .sendLeadMessage(leadId, text, sender)
+      .then((result) => notifyOutboundDelivery(result.delivery, addNotification))
+      .catch(err => {
+        console.warn('Falha ao persistir mensagem na API:', err);
+      });
 
     // Se quem respondeu foi o lojista/atendente humano:
     if (sender === 'agent') {
@@ -510,6 +593,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (result.persisted && result.message) {
       appendMessage(leadId, result.message);
     }
+
+    // Envio real (S4): avisa quando a mensagem ficou registrada mas não saiu pelo WhatsApp.
+    notifyOutboundDelivery(result.delivery, addNotification);
 
     setDevLogs(prev => [
       {
@@ -789,7 +875,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       connectWhatsApp,
       logoutWhatsApp,
       restartWhatsApp,
-      provisionWhatsApp
+      provisionWhatsApp,
+      testMode,
+      testModeLoading,
+      refreshTestMode,
+      saveTestMode
     }}>
       {children}
     </CRMContext.Provider>

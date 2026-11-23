@@ -32,6 +32,12 @@ model Store {
   interventionPauseHours Int      @default(24) // Pausa de 24h na IA após humano responder
   vipGroupLink           String?  // Link de redirecionamento para grupo VIP de WhatsApp
 
+  // Modo Teste (Onda 1.5): quando ligado, só os números abaixo entram no CRM e recebem a
+  // resposta automática da IA. Qualquer outro contato é descartado no webhook (sem Lead,
+  // Message ou DevLog). Números em E.164 só com dígitos (ex.: "5598988451290").
+  testModeEnabled        Boolean  @default(false)
+  testModeNumbers        String[] @default([])
+
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 

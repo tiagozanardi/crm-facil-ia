@@ -3,7 +3,8 @@
 > **Público-alvo:** desenvolvedor(a) júnior que acabou de receber acesso ao banco e nunca viu este projeto.
 > **Objetivo:** explicar, tabela por tabela, *o que é*, *para que serve*, *quem escreve/lê* e *as pegadinhas* de cada campo.
 > **Fonte da verdade:** `prisma/schema.prisma` (este documento foi conferido contra o banco real — 11 tabelas, 12 enums, 12 chaves estrangeiras e 26 índices).
-> **Última atualização:** 2026-11-18 · **Banco:** PostgreSQL no Supabase · **ORM:** Prisma 6
+> **Última atualização:** 2026-11-23 · **Banco:** PostgreSQL no Supabase · **ORM:** Prisma 6
+> **Onda 1 / Modo Teste:** `stores.testModeEnabled` e `stores.testModeNumbers` (migration `20261123120000_modo_teste_allowlist`) e as colunas de envio da Evolution em `messages`/`ai_configs` (migration `20261118153000_whatsapp_onda1`).
 
 ---
 
@@ -159,6 +160,8 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `surfaceColor` | text | sim | `#FAF8F5` | Cor de fundo/off-white. |
 | `interventionPauseHours` | integer | — | `24` | **Regra central:** quantas horas a IA fica em silêncio depois que um humano responde. |
 | `vipGroupLink` | text | sim | — | Link do Grupo VIP (usado no CTA de mesmo nome). |
+| `testModeEnabled` | boolean | — | `false` | **Modo Teste (Onda 1.5):** quando `true`, o webhook descarta qualquer contato fora de `testModeNumbers` **sem gravar nada** (nem Lead, Message ou DevLog) e a IA só responde automaticamente para esses números. |
+| `testModeNumbers` | text[] | sim | `[]` | Números permitidos no modo teste, em **E.164 só com dígitos** (ex.: `5598988451290`). Máximo de 10 por loja (validado na API). |
 | `createdAt` | timestamp | — | `now()` | Criação. |
 | `updatedAt` | timestamp | — | Prisma | Última alteração. |
 
@@ -278,7 +281,7 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 ### 5.6 `messages` — histórico do chat
 
 **Para que serve:** cada mensagem trocada, com autor e status de leitura. É o contexto que a IA usa para responder.
-**Quem escreve:** `POST /api/conversations/:leadId/messages` e `POST .../ai-reply` (a resposta da IA é persistida aqui).
+**Quem escreve:** o webhook da Evolution (`server/routes/webhooks.ts`), `POST /api/conversations/:leadId/messages`, `POST .../ai-reply` (a resposta da IA é persistida aqui) e o envio real do S4/auto-resposta (`server/services/whatsappFlow.ts`).
 **Quem lê:** tela Chats e o `generateAIReply` (últimas 10–14 mensagens montam o histórico multi-turno).
 
 | Coluna | Tipo | Nulo? | Padrão | Descrição |
@@ -288,12 +291,15 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `sender` | enum `MessageSender` | — | — | Quem enviou: `CLIENT` (cliente), `AI` (agente virtual) ou `AGENT` (atendente humano). |
 | `text` | text | — | — | Conteúdo da mensagem. |
 | `mediaUrl` | text | sim | — | URL de mídia. **Campo preparado, ainda não usado** (o chat não envia/renderiza imagem). |
-| `delivered` | boolean | — | `true` | Se a mensagem chegou ao destino (hoje sempre `true`; será útil com a Evolution API). |
+| `externalId` | text | sim | — | **Unique.** `key.id` do WhatsApp (webhook e envio). É a chave de dedupe das reentregas e da correlação dos ticks. Sem ele, o webhook **descarta** a mensagem. |
+| `status` | enum `MessageStatus` | — | `SENT` | `PENDING → SENT → DELIVERED → READ`, ou `FAILED`. O envio do S4 nasce `PENDING` e vira `SENT` (com `externalId`) ou `FAILED` (com `error`). |
+| `error` | text | sim | — | Motivo da falha de envio (só quando `status = FAILED`). |
+| `delivered` | boolean | — | `true` | Se a mensagem chegou ao destino. Com o envio real, mensagens `PENDING`/`FAILED` ficam `false`. |
 | `read` | boolean | — | `false` | Para mensagens do cliente, indica se o atendente já leu. O badge de "não lidas" usa **este campo**. |
 | `isLearned` | boolean | — | `false` | Marca que a mensagem virou ensinamento da IA. **Hoje só o seed preenche**; o botão "Ensinar IA" cria o `ai_knowledge` mas ainda não marca a mensagem. |
-| `createdAt` | timestamp | — | `now()` | Ordem cronológica do chat (`orderBy createdAt asc`). |
+| `createdAt` | timestamp | — | `now()` | Ordem cronológica do chat (`orderBy createdAt asc`). No webhook, usa o `messageTimestamp` do WhatsApp (segundos) quando disponível. |
 
-**Índices:** PK `id`; índice composto `(conversationId, createdAt)` — é exatamente o acesso do chat (mensagens de uma conversa em ordem cronológica) e o do histórico da IA.
+**Índices:** PK `id`; índice composto `(conversationId, createdAt)` — é exatamente o acesso do chat (mensagens de uma conversa em ordem cronológica) e o do histórico da IA; **unique** em `externalId` (dedupe).
 
 ---
 
@@ -315,6 +321,9 @@ Legenda das colunas: **Nulo?** = aceita `NULL`. **Padrão** = valor aplicado pel
 | `activeHoursStart` | text | — | `08:00` | Início do horário de atendimento (`HH:MM`). **Ainda não é aplicado** no envio automático. |
 | `activeHoursEnd` | text | — | `22:00` | Fim do horário de atendimento. |
 | `respondOffHours` | boolean | — | `true` | Se deve responder fora do horário. **Ainda não aplicado.** |
+| `autoReplyEnabled` | boolean | — | `false` | Liga a resposta automática no WhatsApp em produção. **A Onda 2/S6 ainda não implementou a automação geral**; no Modo Teste a IA responde mesmo com esta flag `false` (a lista de números é a trava). |
+| `replyDelaySeconds` | integer | — | `8` | Debounce entre a mensagem do cliente e a resposta automática. No webhook do Modo Teste o atraso é **capado em 2 s** (limite da Vercel); a Onda 2 deve mover a automação para uma fila. |
+| `dailyReplyLimit` | integer | — | `200` | Proteção de custo/loop por loja. **Ainda não aplicado** (a Onda 2/S6 aplica). |
 | `createdAt` / `updatedAt` | timestamp | — | `now()` / Prisma | Auditoria. |
 
 **Criação sob demanda:** se a loja não tiver configuração, o `GET /api/ai-config` cria uma com os defaults (`ensureAIConfig`).

@@ -1,4 +1,4 @@
-import { AIStatus, LeadStage, MessageSender } from '@prisma/client';
+import { AIStatus, LeadStage, MessageSender, MessageStatus } from '@prisma/client';
 
 // ------------------------------------------------------------
 // Mapeamento entre os enums do Prisma (UPPER_SNAKE) e os
@@ -141,6 +141,7 @@ type MessageRow = {
   id: string;
   sender: MessageSender;
   text: string;
+  status: MessageStatus;
   createdAt: Date;
   read: boolean;
   isLearned: boolean;
@@ -152,6 +153,7 @@ export function formatMessage(message: MessageRow) {
     id: message.id,
     sender: toClientSender(message.sender),
     text: message.text,
+    status: message.status,
     timestamp: formatTime(message.createdAt),
     sentAt: message.createdAt.toISOString(),
     read: message.read,

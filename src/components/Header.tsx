@@ -9,7 +9,8 @@ import {
   ShieldCheck, 
   ChevronDown,
   Sparkles,
-  Smartphone
+  Smartphone,
+  FlaskConical
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -25,7 +26,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     leads, 
     notification,
     whatsapp,
-    whatsappLoading
+    whatsappLoading,
+    testMode
   } = useCRM();
 
   const urgentCount = leads.filter(l => l.urgent).length;
@@ -135,6 +137,24 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
                   </button>
                   <span className="text-gray-300">•</span>
                   <span className="text-[11px] text-gray-500 hidden md:inline">IA Ativa</span>
+                  {testMode?.enabled && (
+                    <>
+                      <span className="text-gray-300 hidden sm:inline">•</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setCurrentView('settings');
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold hover:bg-amber-100 transition-colors"
+                        title={`Modo teste ativo: a IA só responde a ${testMode.numbers.length} número(s). Abrir Configurações.`}
+                      >
+                        <FlaskConical className="w-3 h-3" />
+                        <span className="hidden sm:inline">Modo teste</span>
+                        <span className="sm:hidden">Teste</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

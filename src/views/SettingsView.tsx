@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useCRM } from '../context/CRMContext';
 import { WhatsAppConnectionCard } from '../components/WhatsAppConnectionCard';
+import { TestModeCard } from '../components/TestModeCard';
 import { 
   Settings, 
   Palette, 
@@ -145,6 +146,9 @@ export const SettingsView: React.FC = () => {
           
           {/* Conexão WhatsApp (Fase 11 / Onda 1 / S5a) */}
           <WhatsAppConnectionCard />
+
+          {/* Modo Teste (Fase 11 / Onda 1.5): a IA só responde aos números cadastrados */}
+          <TestModeCard />
 
           {/* Dados do Negócio */}
           <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs space-y-4">

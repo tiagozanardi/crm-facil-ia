@@ -33,12 +33,33 @@ export interface AIReplyResult {
   model: string;
   tokensUsed: number;
   latencyMs: number;
+  delivery?: OutboundDelivery;
+}
+
+/** Resultado do envio real pela Evolution API (Fase 11 / S4). */
+export interface OutboundDelivery {
+  /** `false` quando o envio nem foi tentado (flag desligada, sem número, sem conexão...). */
+  attempted: boolean;
+  status: 'SENT' | 'FAILED' | 'SKIPPED';
+  /** Motivo do SKIPPED (ex.: `sending-disabled`, `whatsapp-connecting`, `no-phone`). */
+  reason?: string;
+  externalId?: string | null;
+  error?: string;
 }
 
 export interface SendMessageResult {
   message: ChatMessage;
   aiPaused: boolean;
   sender: 'client' | 'ai' | 'agent';
+  delivery?: OutboundDelivery;
+}
+
+/** Configuração do Modo Teste por loja (Onda 1.5). */
+export interface TestModeConfig {
+  enabled: boolean;
+  /** Números em E.164 só com dígitos (ex.: "5598988451290"). */
+  numbers: string[];
+  maxNumbers: number;
 }
 
 /** Status da instância da loja na Evolution API (contrato do S2). */
@@ -386,6 +407,30 @@ export const apiService = {
   /** Reinicia a sessão na Evolution (volta para `CONNECTING` e limpa o QR). */
   async restartWhatsAppInstance(): Promise<WhatsAppInstance> {
     const res = await fetch(`${API_BASE}/whatsapp/instance/restart`, { method: 'POST' });
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  // ----------------------------------------------------------------
+  // Modo Teste (Fase 11 / Onda 1.5) — allowlist de números por loja
+  // ----------------------------------------------------------------
+  /** Configuração atual do modo teste da loja. */
+  async getTestMode(): Promise<TestModeConfig> {
+    const res = await fetch(`${API_BASE}/test-mode`);
+    if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
+    return await res.json();
+  },
+
+  /** Liga/desliga e substitui a lista de números de teste (o servidor normaliza em E.164). */
+  async updateTestMode(input: {
+    enabled: boolean;
+    numbers: string[];
+  }): Promise<TestModeConfig> {
+    const res = await fetch(`${API_BASE}/test-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
     if (!res.ok) throw new ApiRequestError(await parseError(res), res.status);
     return await res.json();
   },

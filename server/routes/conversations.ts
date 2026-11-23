@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { MessageSender } from '@prisma/client';
+import { MessageSender, MessageStatus } from '@prisma/client';
 import { prisma } from '../db.js';
 import { getDefaultStore } from '../helpers/tenant.js';
 import {
@@ -16,6 +16,8 @@ import {
   pauseAIForLead,
   resumeExpiredPauses,
 } from '../services/leadState.js';
+import { isEvolutionEnabled } from '../services/evolution.js';
+import { deliverOutboundMessage, type OutboundDelivery } from '../services/whatsappFlow.js';
 import {
   assertApiKeyConfigured,
   generateAIReply,
@@ -38,6 +40,7 @@ type ConversationWithMessages = {
     id: string;
     sender: MessageSender;
     text: string;
+    status: MessageStatus;
     createdAt: Date;
     read: boolean;
     isLearned: boolean;
@@ -113,6 +116,8 @@ conversationsRouter.get('/:leadId', async (req, res) => {
 });
 
 // POST /api/conversations/:leadId/messages - Grava mensagem (cliente, IA ou atendente)
+// S4: com EVOLUTION_ENABLED=true e número disponível, a mensagem do atendente/IA é enviada
+// pelo WhatsApp. A `Message` nasce PENDING e vira SENT (+ externalId) ou FAILED (+ error).
 conversationsRouter.post('/:leadId/messages', async (req, res) => {
   try {
     const { leadId } = req.params;
@@ -127,13 +132,23 @@ conversationsRouter.post('/:leadId/messages', async (req, res) => {
     const cleanText = text.trim();
     const now = new Date();
 
+    const [lead, instance] = await Promise.all([
+      prisma.lead.findUnique({ where: { id: leadId }, select: { phoneE164: true } }),
+      prisma.whatsAppInstance.findUnique({ where: { storeId: conversation.storeId } }),
+    ]);
+
+    // Mensagem de cliente é registro interno (o cliente não fala pelo CRM): nunca envia.
+    const willTrySend =
+      prismaSender !== MessageSender.CLIENT && isEvolutionEnabled() && Boolean(lead?.phoneE164);
+
     const created = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         sender: prismaSender,
         text: cleanText,
         read: prismaSender !== MessageSender.CLIENT,
-        delivered: true,
+        delivered: !willTrySend,
+        ...(willTrySend ? { status: MessageStatus.PENDING } : {}),
       },
     });
 
@@ -175,10 +190,29 @@ conversationsRouter.post('/:leadId/messages', async (req, res) => {
         .catch(() => {});
     }
 
+    // Envio real (S4). Sem a flag, nada muda no comportamento de demonstração.
+    let delivery: OutboundDelivery | undefined;
+    if (willTrySend) {
+      delivery = await deliverOutboundMessage({
+        storeId: conversation.storeId,
+        instance,
+        messageId: created.id,
+        phoneE164: lead?.phoneE164 ?? null,
+        text: cleanText,
+        source: prismaSender === MessageSender.AI ? 'Chat do lead (IA)' : 'Chat do lead',
+      });
+    } else if (isEvolutionEnabled() && prismaSender !== MessageSender.CLIENT) {
+      // Flag ligada, mas sem número E.164 no lead: registra o motivo em vez de "fingir" envio.
+      delivery = { attempted: false, status: 'SKIPPED', reason: 'no-phone' };
+    }
+
+    const stored = await prisma.message.findUnique({ where: { id: created.id } });
+
     res.status(201).json({
-      message: formatMessage(created),
+      message: formatMessage(stored ?? created),
       aiPaused,
-      sender: toClientSender(created.sender),
+      sender: toClientSender((stored ?? created).sender),
+      ...(delivery ? { delivery } : {}),
     });
   } catch (error: any) {
     if (error?.statusCode === 404) {
@@ -258,6 +292,13 @@ conversationsRouter.post('/:leadId/ai-reply', async (req, res) => {
       });
     }
 
+    // S4: a resposta da IA também é enviada pelo WhatsApp quando o envio está ligado.
+    const [lead, instance] = await Promise.all([
+      prisma.lead.findUnique({ where: { id: leadId }, select: { phoneE164: true } }),
+      prisma.whatsAppInstance.findUnique({ where: { storeId: conversation.storeId } }),
+    ]);
+    const willTrySend = isEvolutionEnabled() && Boolean(lead?.phoneE164);
+
     const now = new Date();
     const created = await prisma.message.create({
       data: {
@@ -265,7 +306,8 @@ conversationsRouter.post('/:leadId/ai-reply', async (req, res) => {
         sender: MessageSender.AI,
         text: result.response,
         read: true,
-        delivered: true,
+        delivered: !willTrySend,
+        ...(willTrySend ? { status: MessageStatus.PENDING } : {}),
       },
     });
 
@@ -278,13 +320,30 @@ conversationsRouter.post('/:leadId/ai-reply', async (req, res) => {
       data: { lastInteraction: now },
     });
 
+    let delivery: OutboundDelivery | undefined;
+    if (willTrySend) {
+      delivery = await deliverOutboundMessage({
+        storeId: conversation.storeId,
+        instance,
+        messageId: created.id,
+        phoneE164: lead?.phoneE164 ?? null,
+        text: result.response,
+        source: 'Resposta da IA no chat',
+      });
+    } else if (isEvolutionEnabled()) {
+      delivery = { attempted: false, status: 'SKIPPED', reason: 'no-phone' };
+    }
+
+    const stored = await prisma.message.findUnique({ where: { id: created.id } });
+
     res.status(201).json({
       response: result.response,
       persisted: true,
-      message: formatMessage(created),
+      message: formatMessage(stored ?? created),
       model: result.model,
       tokensUsed: result.tokensUsed,
       latencyMs: result.latencyMs,
+      ...(delivery ? { delivery } : {}),
     });
   } catch (error: any) {
     if (error instanceof MissingApiKeyError) {

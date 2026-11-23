@@ -50,6 +50,8 @@ export interface ChatMessage {
   id: string;
   sender: 'client' | 'ai' | 'agent';
   text: string;
+  /** Status de entrega real (S4): PENDING → SENT → DELIVERED → READ, ou FAILED. */
+  status?: 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
   timestamp: string;
   delivered?: boolean;
   read?: boolean;
