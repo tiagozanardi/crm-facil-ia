@@ -90,7 +90,8 @@ página — justamente o que faltava para testar o envio real com o chip.
   pausa/retomada/`pausedUntil`/stage espelhados, `disabled` intocado e referência estável sem mudanças.
 - **17 asserções** de ponta a ponta (`tmp/s5b-api-e2e.ts`): webhook cria lead/conversa, tick
   `messages.update` vira `READ`, `GET /api/conversations` devolve `SENT/PENDING/DELIVERED/READ/FAILED`
-  e o merge do frontend adiciona conversa + lead sintético.
+  e o merge do frontend adiciona conversa + lead sintético. (O payload real do tick foi ajustado
+  depois — ver seção 5.)
 - Banco restaurado ao final: 5 leads, 15 mensagens, modo teste desligado, 0 logs de fixture.
 - **6 asserções** extras confirmaram o critério de demo do S4 (`EVOLUTION_ENABLED=false`): `POST
   /messages` → `201`, mensagem `SENT`, sem `delivery`/`externalId` (`tmp/s5b-demo-flag.ts`).
@@ -102,10 +103,41 @@ página — justamente o que faltava para testar o envio real com o chip.
 
 ---
 
-## 5. Pendências ou Próximos Passos
+## 5. Pós-teste real e correção dos ticks (2026-11-23)
 
-1. **Validação com chip**: é o único caminho não exercitado fisicamente. Com o número conectado,
-   confirmar mensagem → resposta → ticks reais (`DELIVERED`/`READ`) e o banner ao desconectar.
+O primeiro teste com o chip real (`EVOLUTION_ENABLED=true` em Production, instância `CONNECTED` no
+número `554898205773`) confirmou o ciclo completo: **4 respostas automáticas** para o número de
+teste `554896535640`, com preço Pix/estoque corretos, `sendText` `HTTP 201`, `externalId` gravado e
+latência de **8,3–9,7 s** por resposta. A IA permaneceu `ACTIVE` (sem pausa indevida).
+
+**Problema encontrado:** o WhatsApp real envia `MESSAGES_UPDATE` com um payload diferente do fixture
+do S3 — os 34 eventos chegaram, mas todos foram ignorados com `missing-external-id` e o status das
+mensagens ficou preso em `SENT` (o chat nunca mostrava entregue/lido).
+
+**Correção em `server/routes/webhooks.ts` (`handleMessagesUpdate`):**
+- o ID agora é aceito de `keyId` (payload real da v2.3.7), `key.id`, `messageId`, `id` e `update.key.id`;
+- o status é lido de `item.status` ou `update.status`, como string (`SERVER_ACK`, `READ`...) **ou
+  número do Baileys** (`0 ERROR`, `1 PENDING`, `2 SERVER_ACK`, `3 DELIVERY_ACK`, `4 READ`, `5 PLAYED`);
+- quando não reconhece, o `DevLog` grava **somente os nomes dos campos** (`keys`, `keyKeys`,
+  `updateKeys`, `statusType`) para o próximo ajuste não ficar às cegas.
+
+**Validação:** 19 asserções com fixtures dos 5 formatos (`keyId` + string, `key.id` + número,
+`keyId` + `update.status`, número em string, `data` objeto) + diagnóstico de payload sem ID —
+`tmp/tick-parser-test.ts`, todas verdes; `tsc` e `build` verdes.
+
+**Tempo de intervenção humana:** alterado para **1 hora** na interface e confirmado no banco e na
+API (`interventionPauseHours = 1`, `updatedAt 2026-11-23T20:39:50Z`).
+
+**Ainda a confirmar no real:** os ticks `DELIVERED/READ` de uma mensagem nova e o teste de
+intervenção humana (responder pelo celular da loja → `fromMe` → IA pausada por 1h).
+
+---
+
+## 6. Pendências ou Próximos Passos
+
+1. **Validação final com chip**: confirmar os ticks reais (`DELIVERED`/`READ`) de uma mensagem nova e
+   a intervenção humana (responder pelo celular da loja → banner de IA pausada por 1h → “Reativar
+   IA”). A parte de receber, responder e enviar já foi validada em 2026-11-23.
 2. **Onda 2 / S6**: generalizar a auto-resposta no WhatsApp (`autoReplyEnabled`, `dailyReplyLimit`,
    janela de horário e fila em vez do webhook síncrono). O `ChatView` já está pronto para exibir o
    que essa automação gerar.

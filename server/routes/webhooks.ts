@@ -328,6 +328,29 @@ function mapMessageStatus(raw: string | null): MessageStatus | null {
   }
 }
 
+/**
+ * `MESSAGES_UPDATE` real da Evolution v2.3.7 (validado em 2026-11-23): o item traz `keyId` e o
+ * status pode vir como **número** do Baileys (`WAMessageStatus`), não só como string.
+ * Mapeamento: 0 ERROR, 1 PENDING, 2 SERVER_ACK, 3 DELIVERY_ACK, 4 READ, 5 PLAYED.
+ */
+function mapNumericMessageStatus(raw: number | null): MessageStatus | null {
+  switch (raw) {
+    case 0:
+      return MessageStatus.FAILED;
+    case 1:
+      return MessageStatus.PENDING;
+    case 2:
+      return MessageStatus.SENT;
+    case 3:
+      return MessageStatus.DELIVERED;
+    case 4:
+    case 5:
+      return MessageStatus.READ;
+    default:
+      return null;
+  }
+}
+
 // ------------------------------------------------------------
 // Erros / DevLog
 // ------------------------------------------------------------
@@ -868,15 +891,44 @@ async function handleMessagesUpdate(
 
   for (const item of toItems(data)) {
     const key = asRecord(item.key);
-    const externalId = asString(key?.id) ?? asString(item.id);
+    const update = asRecord(item.update);
+    const updateKey = asRecord(update?.key);
+
+    // Payload real da v2.3.7: `{ keyId, status }` (validado em 2026-11-23). Mantemos também os
+    // formatos antigos (`key.id`, `id`, `messageId`) e o cru do Baileys (`update.status`).
+    const externalId =
+      asString(item.keyId) ??
+      asString(key?.id) ??
+      asString(item.messageId) ??
+      asString(item.id) ??
+      asString(updateKey?.id);
+
     if (!externalId) {
       outcome.ignored.push('missing-external-id');
+      // Nomes de campos apenas (nunca conteúdo): se a Evolution mudar de novo, o log mostra.
+      outcome.diagnostics.push({
+        reason: 'missing-external-id',
+        keys: Object.keys(item).slice(0, 10),
+        keyKeys: key ? Object.keys(key).slice(0, 6) : [],
+        updateKeys: update ? Object.keys(update).slice(0, 6) : [],
+      });
       continue;
     }
 
-    const status = mapMessageStatus(asString(item.status));
+    const rawStatus = item.status ?? update?.status;
+    const rawText = asString(rawStatus);
+    const rawNumber = asNumber(rawStatus);
+    const status = mapMessageStatus(rawText) ?? mapNumericMessageStatus(rawNumber);
+
     if (!status) {
       outcome.ignored.push('unknown-status');
+      outcome.diagnostics.push({
+        reason: 'unknown-status',
+        statusType: typeof rawStatus,
+        status: rawText ?? rawNumber ?? null,
+        keys: Object.keys(item).slice(0, 10),
+        updateKeys: update ? Object.keys(update).slice(0, 6) : [],
+      });
       continue;
     }
 
