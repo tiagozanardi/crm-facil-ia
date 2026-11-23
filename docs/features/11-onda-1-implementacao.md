@@ -269,7 +269,7 @@ o filtro total no webhook e a auto-resposta. Detalhes em
 [`12-modo-teste-e-envio-real.md`](./12-modo-teste-e-envio-real.md).
 
 **Validação**: `tsc` (frontend/backend) + `npm run build` verdes; **36 asserções** de E2E local
-(filtro sem rastro, dedupe, eco, intervenção humana, API do modo teste) e **7 asserções** do caminho
+(filtro sem rastro, dedupe, eco, intervenção humana, API do modo teste) e **8 asserções** do caminho
 de envio (recusa em ~3 s sem esperar o timeout; `whatsapp-connecting` sem chamar a OpenAI). **O
 envio físico ainda não foi testado** — não há chip conectado (`crm-malas-slz` em `CONNECTING`);
 o primeiro teste com chip deve confirmar a resposta no celular.
@@ -466,4 +466,4 @@ o primeiro teste com chip deve confirmar a resposta no celular.
 | 2026-11-18 | DSH | S1 (cliente Evolution) + S2 (rotas `/api/whatsapp`) + deploy da API na Vercel corrigido (envs + imports ESM) |
 | 2026-11-19 | DSH | S3 (webhook `POST /api/webhooks/evolution`): autenticação timing-safe, dedupe, Lead/Conversation/Message, intervenção humana por `fromMe`, status/QR da instância e ticks; validado com 15 casos local e em produção, fixtures limpos |
 | 2026-11-19 | DSH | **S5a** (tela **Conexão WhatsApp** em Configurações + badge real no Header): tipos/métodos na API, estado compartilhado no `CRMContext`, polling 5 s só visível, renovação de QR aos 30 s, criar/conectar/desconectar/reiniciar, avisos de webhook/risco; `tsc`/`build` verdes e prints em 390 px/1440 px. Sem alterar `server/**` nem schema |
-| 2026-11-23 | DSH | **S4 + Modo Teste (Onda 1.5)**: envio real (`whatsappFlow.ts` com `PENDING`→`SENT/FAILED`, checagem de conexão com janela de confiança, adoção do eco `fromMe`), allowlist por loja (`Store.testModeEnabled/testModeNumbers` + migration + `GET/PUT /api/test-mode`), filtro total no webhook (sem Lead/Message/DevLog), auto-resposta só para números da lista (debounce cap 2 s), card **Modo Teste** + badge no Header, `delivery` no chat, `maxDuration: 60` na Vercel; 43 asserções locais e banco restaurado |
+| 2026-11-23 | DSH | **S4 + Modo Teste (Onda 1.5)**: envio real (`whatsappFlow.ts` com `PENDING`→`SENT/FAILED`, checagem de conexão com janela de confiança, adoção do eco `fromMe`), allowlist por loja (`Store.testModeEnabled/testModeNumbers` + migration + `GET/PUT /api/test-mode`), filtro total no webhook (sem Lead/Message/DevLog), auto-resposta só para números da lista (debounce cap 2 s), card **Modo Teste** + badge no Header, `delivery` no chat, `maxDuration: 60` na Vercel; 44 asserções locais e banco restaurado |

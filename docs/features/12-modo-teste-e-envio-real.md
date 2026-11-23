@@ -165,7 +165,7 @@ Pré-requisitos:
 - Migration aplicada e client do Prisma lendo `testModeEnabled`/`testModeNumbers`.
 - **36 asserções** de E2E local (API do modo teste, filtro sem rastro, `fromMe` bloqueado, dedupe,
   corrida do eco, intervenção humana real e desligamento do modo) — `tmp/test-mode-e2e.ts`.
-- **7 asserções** de envio: `deliverOutboundMessage` recusa em ~3 s (sem esperar o timeout de 15 s
+- **8 asserções** de envio: `deliverOutboundMessage` recusa em ~3 s (sem esperar o timeout de 15 s
   do `sendText`) e a auto-resposta com instância `CONNECTING` para em `whatsapp-connecting`, sem
   criar `Message(AI)` e **sem chamar a OpenAI** — `tmp/test-send-flow.ts`.
 - Banco restaurado ao final: 5 leads, 15 mensagens, 0 logs de fixture, modo teste
