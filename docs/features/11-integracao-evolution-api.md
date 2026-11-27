@@ -108,18 +108,25 @@ atualiza status; se o humano enviou, a pausa de 24h da IA é aplicada (regra já
       `QRCODE_UPDATED` guarda o QR em cache.
       **S3 concluído em 2026-11-19** — comportamento, decisões e validação em
       [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s3--webhook-serverrouteswebhooksts---concluído-em-2026-11-19).
-- [ ] `POST /api/conversations/:leadId/messages` e `/ai-reply` passam a **enviar** pelo WhatsApp
+- [x] `POST /api/conversations/:leadId/messages` e `/ai-reply` passam a **enviar** pelo WhatsApp
       (feature flag `EVOLUTION_ENABLED`, com fallback para o comportamento atual quando desligada).
+      **S4 concluído em 2026-11-23** — envio real com `PENDING→SENT/FAILED`, adoção do eco `fromMe`.
 - [x] Tela **"Conexão WhatsApp"** em Configurações: status (conectado/desconectado/aguardando QR),
       QR Code, número conectado, botões Reconectar / Desconectar, última atualização.
       **S5a concluído em 2026-11-19** — detalhes em
       [`11-onda-1-implementacao.md`](./11-onda-1-implementacao.md#s5a--conexão-whatsapp-em-configurações----concluído-em-2026-11-19).
-- [ ] Chat (S5b): polling de 5s enquanto a aba está visível + atualização ao focar a janela; ticks
+- [x] Chat (S5b): polling de 5s enquanto a aba está visível + atualização ao focar a janela; ticks
       enviando/enviado/entregue/lido/falhou; botão "reenviar" para `FAILED`; banner quando desconectado.
+      **S5b concluído em 2026-11-23** — detalhes em
+      [`13-s5b-chat-tempo-real.md`](./13-s5b-chat-tempo-real.md).
 - [ ] `GET /api/conversations?since=<iso>` para polling incremental (evita baixar tudo a cada 5s).
 
 **Critério de aceite da Onda 1:** mensagem real do celular aparece no CRM em ≤ 5s; resposta digitada no
 CRM chega no celular; desconectar o celular do Wi-Fi e voltar não duplica mensagens.
+
+> **Validado em 2026-11-27** com o chip conectado: recebimento ≤5 s, resposta do CRM entregue e lida
+> (`SENT→DELIVERED→READ`) e ciclo da auto-resposta do Modo Teste. Evidências e o achado do tick da
+> resposta automática em [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md).
 
 ### 🌊 Onda 2 — IA no WhatsApp (automático e seguro)
 - [ ] `AIConfig.autoReplyEnabled` (liga/desliga por loja) + `replyDelaySeconds` (debounce, padrão 8s).

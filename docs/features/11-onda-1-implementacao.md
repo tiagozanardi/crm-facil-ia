@@ -375,10 +375,12 @@ uma mensagem nova e a intervenção humana.
   janela de horário, kill switch e mover a espera para uma fila (o webhook hoje é síncrono).
 - Sem `autoReplyEnabled` (ou fora do modo teste), o webhook só grava (não responde).
 
-### S7 — Validação
-- `npm run build` + `tsc --noEmit`.
-- Webhook com fixtures reais (`curl`) — dedupe, `fromMe`, grupo, sem texto.
-- E2E com chip: mensagem chega ≤5 s, resposta do CRM chega, IA pausa quando humano responde pelo celular.
+### S7 — Validação — ✅ **concluído em 2026-11-27**
+- `npm run build` + `tsc --noEmit` — verdes na validação final (frontend e `tsconfig.server.json`).
+- Webhook com fixtures reais (`curl`) — dedupe, `fromMe`, grupo, sem texto (15 casos no S3).
+- E2E com chip: mensagem chega ≤5 s, resposta do CRM chega com ticks `SENT→DELIVERED→READ` e a IA
+  pausa quando o humano responde pelo celular. Detalhes em
+  [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md).
 
 ---
 
@@ -456,7 +458,9 @@ uma mensagem nova e a intervenção humana.
 
 - [x] Criar instância pelo CRM e conectar por QR — validado em 2026-11-23 (`CONNECTED`, número `554898205773`).
 - [x] Mensagem real do celular aparece no chat em ≤5 s (sem duplicar) — validado no teste real de 2026-11-23.
-- [ ] Resposta digitada no CRM chega no celular com tick de enviado.
+- [x] Resposta digitada no CRM chega no celular com tick de enviado — validado em 2026-11-27, com os
+  ticks reais `SENT → DELIVERED → READ` (ver
+  [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md)).
 - [x] `EVOLUTION_ENABLED=false` mantém o comportamento atual (demo) sem erro — validado: `201`, mensagem `SENT`, sem `delivery`/`externalId`.
 - [x] Tela **"Conexão WhatsApp"** em Configurações com status real, QR, criar/reiniciar/desconectar,
   aviso de webhook e de risco (S5a, validada sem escanear QR).
@@ -468,26 +472,27 @@ uma mensagem nova e a intervenção humana.
 - [x] `npm run build` e `tsc --noEmit` verdes.
 - [x] Doc da feature atualizado (Handoff/AGENTS) e commit semântico.
 
-> **Nota**: o chip foi conectado e o recebimento + resposta automática foram validados em
-> 2026-11-23. Faltam apenas os **ticks reais** de uma mensagem nova e o teste de **resposta manual /
-> intervenção humana** (o parser dos ticks já foi corrigido para o payload real).
+> **Nota**: em **2026-11-27** a validação foi encerrada: mensagens enviadas pela rota do chat fizeram
+> `SENT → DELIVERED` em ≤3 s e chegaram a `READ` ao abrir o celular, e os `MESSAGES_UPDATE` passaram a
+> registrar `1 processado(s)` em vez de `unknown-message`. A **intervenção humana** também já havia sido
+> validada (23/11). Ficou um **achado para o S6**: a resposta automática do Modo Teste permaneceu em
+> `SENT` mesmo entregue (provável adoção do eco antes do `markSent`); detalhes e hipóteses em
+> [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md#6-achado-para-a-onda-2--s6-não-bloqueia-a-onda-1).
 
 ---
 
 ## 8. Prompt sugerido para o novo chat
 
 > Leia `HANDOFF.md`, `docs/features/11-integracao-evolution-api.md`,
-> `docs/features/11-onda-1-implementacao.md`, `docs/features/12-modo-teste-e-envio-real.md` e
-> `docs/features/13-s5b-chat-tempo-real.md`. A Onda 1 está **completa no código** (S1–S4 + S5a + S5b
-> + Modo Teste). As próximas frentes são:
-> 1. **Fechar a validação real**: o chip já está conectado e receber/responder foi validado em
->    2026-11-23 (4 respostas automáticas). Confirmar os **ticks reais** de uma mensagem nova
->    (`DELIVERED`/`READ`, com o parser corrigido para `keyId`/status numérico) e a **intervenção
->    humana** (responder pelo celular da loja → pausa de 1h → “Reativar IA”). Registrar no handoff.
-> 2. **Onda 2 / S6**: generalizar a auto-resposta no WhatsApp (`autoReplyEnabled`, `dailyReplyLimit`,
->    janela de horário, fila em vez do webhook síncrono), reaproveitando `server/services/whatsappFlow.ts`.
-> Sem alterar o schema na validação. Use permissão ampliada para Prisma/build/push e limpe os fixtures
-> no fim. A API já está no ar na Vercel e o webhook já recebe eventos.
+> `docs/features/11-onda-1-implementacao.md`, `docs/features/12-modo-teste-e-envio-real.md`,
+> `docs/features/13-s5b-chat-tempo-real.md` e `docs/features/14-validacao-final-onda-1.md`.
+> A Onda 1 está **concluída e validada com o chip** (S1–S4 + S5a + S5b + Modo Teste; ticks reais
+> confirmados em 2026-11-27). A próxima frente é a **Onda 2 / S6**: generalizar a auto-resposta no
+> WhatsApp (`autoReplyEnabled`, `replyDelaySeconds`, `dailyReplyLimit`, janela de horário, fila em vez
+> do webhook síncrono), reaproveitando `server/services/whatsappFlow.ts`. Inclua no S6 o ajuste do tick
+> da resposta automática (seção 6 do doc 14: `externalId` curto, acks não casados) e use status
+> monotônico. A API já está no ar na Vercel e o webhook já recebe eventos; use permissão ampliada para
+> Prisma/build/push.
 
 ---
 
@@ -501,3 +506,4 @@ uma mensagem nova e a intervenção humana.
 | 2026-11-23 | DSH | **S4 + Modo Teste (Onda 1.5)**: envio real (`whatsappFlow.ts` com `PENDING`→`SENT/FAILED`, checagem de conexão com janela de confiança, adoção do eco `fromMe`), allowlist por loja (`Store.testModeEnabled/testModeNumbers` + migration + `GET/PUT /api/test-mode`), filtro total no webhook (sem Lead/Message/DevLog), auto-resposta só para números da lista (debounce cap 2 s), card **Modo Teste** + badge no Header, `delivery` no chat, `maxDuration: 60` na Vercel; 44 asserções locais e banco restaurado |
 | 2026-11-23 | DSH | **S5b** (chat em tempo real): polling de 5 s só com a aba visível + refresh ao focar, ticks `PENDING/SENT/DELIVERED/READ/FAILED` (com contorno em falha), banner âmbar/vermelho de conexão, auto-scroll, merge puro de conversas/leads (otimista, contato novo no topo, pausa da IA espelhada) e substituição da mensagem otimista pela real; 34 asserções locais, `tsc`/`build` verdes e banco restaurado |
 | 2026-11-23 | DSH | **Validação real com chip + fix dos ticks**: 4 respostas automáticas reais (preço/Pix/estoque corretos, 8,3–9,7 s), payload real de `MESSAGES_UPDATE` com `keyId`/status numérico, parser ajustado e validado com 19 asserções; tempo de intervenção salvo em 1h (banco/API); faltam ticks reais de mensagem nova e o teste de intervenção |
+| 2026-11-27 | DSH | **Validação final da Onda 1**: ambientes conferidos (git/build/tsc/env/Evolution/Vercel/DevLog) e ticks reais confirmados com o chip — `SENT → DELIVERED` em ≤3 s e `READ` (duas mensagens), `MESSAGES_UPDATE: 1 processado(s)`; ciclo inverso revalidado (mensagem do celular + auto-resposta do Modo Teste, `sendText` 201 em 460 ms); achado do tick da auto-resposta para o S6; sem alteração de código/schema (ver [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md)) |

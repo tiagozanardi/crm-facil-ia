@@ -138,9 +138,11 @@ virou `unknown-message` (esperado).
 
 ## 6. Pendências ou Próximos Passos
 
-1. **Validação final com chip**: confirmar os ticks reais (`DELIVERED`/`READ`) de uma mensagem nova e
-   a intervenção humana (responder pelo celular da loja → banner de IA pausada por 1h → “Reativar
-   IA”). A parte de receber, responder e enviar já foi validada em 2026-11-23.
+1. **Validação final com chip** — ✅ **concluída em 2026-11-27**: duas mensagens enviadas pelo chat
+   fizeram `SENT → DELIVERED` em ≤3 s e chegaram a `READ`; a intervenção humana já havia sido validada
+   em 23/11. Evidências em [`14-validacao-final-onda-1.md`](./14-validacao-final-onda-1.md). O único
+   ponto em aberto é o **tick da resposta automática** do Modo Teste (ficou em `SENT` mesmo entregue) —
+   ver seção 6 do doc 14.
 2. **Onda 2 / S6**: generalizar a auto-resposta no WhatsApp (`autoReplyEnabled`, `dailyReplyLimit`,
    janela de horário e fila em vez do webhook síncrono). O `ChatView` já está pronto para exibir o
    que essa automação gerar.
